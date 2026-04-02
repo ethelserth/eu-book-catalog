@@ -6,7 +6,7 @@
 |-------|------|--------|
 | 1 | Foundation | ✓ Complete |
 | 2 | Filament Admin | ✓ Complete |
-| 3 | Thema Seeding | Not Started |
+| 3 | Thema Seeding | ✓ Complete |
 | 4 | BIBLIONET Client | Not Started |
 | 5 | Authority Matching | Not Started |
 | 6 | Pipeline Services | Not Started |
@@ -78,18 +78,28 @@
 
 ---
 
-## Phase 3: Thema Seeding (Steps 56-65)
+## Phase 3: Thema Seeding (Steps 56-65) ✓ COMPLETE
 
-- [ ] 56. Download from EDItEUR
-- [ ] 57. Analyze structure
-- [ ] 58. Plan Greek headings
-- [ ] 59. Create seeder class
-- [ ] 60. Parse XML/JSON
-- [ ] 61. Handle hierarchy order
-- [ ] 62. Implement seeder
-- [ ] 63. Run seeder
-- [ ] 64. Verify in admin
-- [ ] 65. Create update command
+- [x] 56. Download from EDItEUR (v1.6 JSON, stored at storage/thema/thema_en.json)
+- [x] 57. Analyze structure (v1.6: CodeList.ThemaCodes.Code array)
+- [x] 58. Plan Greek headings (heading_el nullable, to be populated later)
+- [x] 59. Create seeder class (ThemaSubjectSeeder)
+- [x] 60. Parse XML/JSON (JSON parsing with version-agnostic path resolution)
+- [x] 61. Handle hierarchy order (two-pass insert: rows first, parent links second)
+- [x] 62. Implement seeder (batch insert + batch update, progress bars)
+- [x] 63. Run seeder (9,187 codes, 26 root categories)
+- [x] 64. Verify in admin (ThemaSubjectResource available)
+- [x] 65. Create update command (php artisan thema:update --download)
+
+### Notes
+- Thema v1.6 has codes up to 14 chars (national extensions like 1KBB-US-NAKCMG)
+  — required widening code/parent_code columns from varchar(10) to varchar(20)
+  (migration: 2026_04_02_094832_widen_thema_subjects_code_column)
+- Parent codes are not always a prefix of the child code; length-sort was
+  insufficient — switched to two-pass insert to avoid FK violations
+- CodeParent is sometimes integer in v1.6 JSON; cast to string before use
+- Level calculation: strlen(code) - 1 (approximate; hyphens inflate depth for
+  national extension codes but this is acceptable for display purposes)
 
 ---
 
