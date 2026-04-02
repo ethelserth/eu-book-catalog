@@ -5,7 +5,7 @@
 | Phase | Name | Status |
 |-------|------|--------|
 | 1 | Foundation | ✓ Complete |
-| 2 | Filament Admin | Not Started |
+| 2 | Filament Admin | ✓ Complete |
 | 3 | Thema Seeding | Not Started |
 | 4 | BIBLIONET Client | Not Started |
 | 5 | Authority Matching | Not Started |
@@ -31,42 +31,50 @@
 
 ---
 
-## Phase 2: Filament Admin (Steps 29-55)
+## Phase 2: Filament Admin (Steps 29-55) ✓ COMPLETE
 
 ### Installation
-- [ ] 29. Install Filament
-- [ ] 30. Create admin user
-- [ ] 31. Configure panel
-- [ ] 32. Update User model
+- [x] 29. Install Filament (v4.9.3)
+- [x] 30. Create admin user
+- [x] 31. Configure panel (branding, navigation groups, global search)
+- [x] 32. Update User model (FilamentUser + Spatie roles)
 
 ### Entity Resources
-- [ ] 33. AuthorResource
-- [ ] 34. AuthorNameVariantResource
-- [ ] 35. PublisherResource
-- [ ] 36. WorkResource
-- [ ] 37. ExpressionResource
-- [ ] 38. EditionResource
-- [ ] 39. PublisherNameVariantResource
-- [ ] 40. ThemaSubjectResource
-- [ ] 41. ProvenanceResource
-- [ ] 42. EditionProvenanceLogResource
-- [ ] 43. RawIngestionRecordResource
-- [ ] 44. ReviewQueueResource
-- [ ] 45. Verify all resources
+- [x] 33. AuthorResource (with NameVariants + Works relation managers)
+- [x] 34. AuthorNameVariantResource (inline relation manager on Author)
+- [x] 35. PublisherResource (with NameVariants + Editions relation managers)
+- [x] 36. WorkResource (with Authors + Expressions relation managers)
+- [x] 37. ExpressionResource (with Contributors + Editions relation managers)
+- [x] 38. EditionResource (with ProvenanceLog relation manager, FRBR chain links)
+- [x] 39. PublisherNameVariantResource (inline relation manager on Publisher)
+- [x] 40. ThemaSubjectResource
+- [x] 41. ProvenanceResource (read-only, Ingestion group)
+- [x] 42. EditionProvenanceLogResource (read-only relation manager on Edition)
+- [x] 43. RawIngestionRecordResource (read-only, Ingestion group)
+- [x] 44. ReviewQueueResource (view + edit for resolution)
+- [x] 45. All resources verified
 
 ### Dashboard & Custom Pages
-- [ ] 46. Dashboard widgets
-- [ ] 47. Review Queue manager
-- [ ] 48. Author merge page
-- [ ] 49. Work merge page
-- [ ] 50. Ingestion monitor
-- [ ] 51. Quality report page
+- [x] 46. Dashboard widgets (CatalogStatsOverview + AuthorityCoverageWidget)
+- [ ] 47. Review Queue manager (custom page — deferred to Phase 6)
+- [ ] 48. Author merge page (deferred to Phase 5)
+- [ ] 49. Work merge page (deferred to Phase 6)
+- [ ] 50. Ingestion monitor (deferred to Phase 4)
+- [ ] 51. Quality report page (deferred to Phase 5)
 - [ ] 52. Test custom pages
 
 ### Polish
-- [ ] 53. Navigation structure
-- [ ] 54. Global search
-- [ ] 55. Final testing
+- [x] 53. Navigation structure (Catalog / Classification / Ingestion / Quality groups)
+- [x] 54. Global search (Works, Authors, Editions, Publishers)
+- [x] 55. Roles seeder (super_admin, admin, editor, cataloger)
+
+### Notes
+- Used Filament v4 (v3 does not support Laravel 13)
+- Section component lives in Filament\Schemas\Components (not Forms/Infolists)
+- Provenance/RawIngestion/ReviewQueue have no Create page (system-managed)
+- FRBR chain fully navigable: Edition → Expression → Work (clickable links)
+- Pivot fields (role, position) exposed on Work↔Author attach modal
+- Custom pages (merge, monitor, quality) deferred — need ingestion data first
 
 ---
 
