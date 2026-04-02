@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Clients\Contracts\BiblionetClientInterface;
-use App\Clients\Exceptions\BiblionetApiException;
-use App\Clients\Exceptions\BiblionetAuthException;
 use App\Clients\Exceptions\BiblionetRateLimitException;
 use App\Models\Provenance;
 use App\Models\RawIngestionRecord;
@@ -31,7 +29,7 @@ class BiblionetFetch extends Command
 
     public function handle(): int
     {
-        $limit  = $this->option('limit') ? (int) $this->option('limit') : null;
+        $limit = $this->option('limit') ? (int) $this->option('limit') : null;
         $dryRun = (bool) $this->option('dry-run');
 
         if ($dryRun) {
@@ -62,13 +60,13 @@ class BiblionetFetch extends Command
         // "where did this edition come from and when?"
         // ------------------------------------------------------------------
 
-        $batchId    = 'biblionet-' . now()->format('Y-m-d-His');
+        $batchId = 'biblionet-'.now()->format('Y-m-d-His');
         $provenance = null;
 
         if (! $dryRun) {
             $provenance = Provenance::create([
-                'source_system'       => 'biblionet',
-                'batch_id'            => $batchId,
+                'source_system' => 'biblionet',
+                'batch_id' => $batchId,
                 'ingestion_started_at' => now(),
             ]);
 
@@ -100,10 +98,11 @@ class BiblionetFetch extends Command
 
             } catch (\Throwable $e) {
                 $failed++;
-                $this->error("Failed to stage record {$book['id'] ?? '?'}: {$e->getMessage()}");
+                $recordId = $book['id'] ?? '?';
+                $this->error("Failed to stage record {$recordId}: {$e->getMessage()}");
                 Log::error('BiblionetFetch staging error', [
                     'record' => $book['id'] ?? null,
-                    'error'  => $e->getMessage(),
+                    'error' => $e->getMessage(),
                 ]);
             }
         }
@@ -115,8 +114,8 @@ class BiblionetFetch extends Command
         if (! $dryRun && $provenance) {
             $provenance->update([
                 'ingestion_completed_at' => now(),
-                'records_processed'      => $fetched,
-                'records_failed'         => $failed,
+                'records_processed' => $fetched,
+                'records_failed' => $failed,
             ]);
         }
 
@@ -188,14 +187,14 @@ class BiblionetFetch extends Command
     {
         RawIngestionRecord::updateOrCreate(
             [
-                'source_system'    => 'biblionet',
+                'source_system' => 'biblionet',
                 'source_record_id' => (string) $book['id'],
             ],
             [
-                'payload'      => $book,
-                'status'       => 'pending',
+                'payload' => $book,
+                'status' => 'pending',
                 'provenance_id' => $provenance->id,
-                'fetched_at'   => now(),
+                'fetched_at' => now(),
                 // Reset processing state so the pipeline will re-process it.
                 'processed_at' => null,
                 'error_message' => null,

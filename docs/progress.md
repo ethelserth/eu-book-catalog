@@ -7,13 +7,14 @@
 | 1 | Foundation | ✓ Complete |
 | 2 | Filament Admin | ✓ Complete |
 | 3 | Thema Seeding | ✓ Complete |
-| 4 | BIBLIONET Client | In Progress |
-| 5 | Authority Matching | Not Started |
-| 6 | Pipeline Services | Not Started |
-| 7 | Search & Indexing | Not Started |
-| 8 | Public API | Not Started |
-| 9 | Testing & Deployment | Not Started |
-| 10 | Federation | Not Started |
+| 4 | Multi-Provider Ingestion | ✓ Complete |
+| 5 | Normalisation Pipeline | In Progress |
+| 6 | Authority Matching | Not Started |
+| 7 | Pipeline Services (FRBR Write) | Not Started |
+| 8 | Search & Indexing | Not Started |
+| 9 | Public API | Not Started |
+| 10 | Testing & Deployment | Not Started |
+| 11 | Federation | Not Started |
 
 ---
 
@@ -103,115 +104,143 @@
 
 ---
 
-## Phase 4: BIBLIONET Client (Steps 66-80)
+## Phase 4: Multi-Provider Ingestion ✓ COMPLETE
 
-### Setup
-- [ ] 66. Register for API access  ← BLOCKER: needs real credentials from elivip.gr
-- [x] 67. Create configuration (config/services.php biblionet block)
-- [x] 68. Create client interface (app/Clients/Contracts/BiblionetClientInterface.php)
-- [x] 69. Implement client (app/Clients/BiblionetClient.php — OAuth2, retry, throttle)
-- [x] 70. Create exceptions (BiblionetAuthException, BiblionetRateLimitException, BiblionetApiException)
+### Infrastructure
+- [x] 67. Create configuration (config/services.php — biblionet + openlibrary blocks)
+- [x] 68. Create BiblionetClientInterface + OpenLibraryClientInterface contracts
+- [x] 69. Implement BiblionetClient (OAuth2, retry, throttle)
+- [x] 70. Implement OpenLibraryClient (User-Agent, timeout 30s, retry on 5xx/timeout)
+- [x] Create BiblionetAuthException, BiblionetRateLimitException, BiblionetApiException
 
-### Fetching
-- [x] 71. Create fetch command (php artisan biblionet:fetch)
-- [x] 72. Implement staging logic (updateOrCreate into raw_ingestion_records)
-- [x] 73. Create provenance record per batch
-- [x] 74. Link raw records to provenance
-- [x] 75. Update provenance stats on completion
-- [ ] 76. Test small fetch  ← needs API credentials
-- [ ] 77. Verify in admin  ← needs API credentials
-- [x] 78. Incremental sync (--since= option, defaults to yesterday)
-- [x] 79. Scheduled task (routes/console.php — daily at 03:00)
-- [ ] 80. Test full fetch  ← needs API credentials
+### Provider Credentials Admin
+- [x] ProviderCredential model (UUID, encrypted credentials, JSON settings)
+- [x] Migration: provider_credentials table (is_active, auto_sync, last_ingestion_at)
+- [x] Migration: convert provenance.source_system from enum CHECK to plain VARCHAR
+- [x] Filament resource (Settings group, KeyValue form, ToggleColumn table)
+- [x] Form auto-fills defaults when provider is selected (->live() + afterStateUpdated)
+- [x] AppServiceProvider: DB-backed credential injection with Schema::hasTable() guard
+
+### Fetch Commands
+- [x] php artisan biblionet:fetch (--full, --since, --limit, --dry-run)
+- [x] php artisan openlibrary:fetch (--isbn, --work, --search, --full, --sync, --since, --date, --limit, --dry-run)
+- [x] php artisan catalog:sync (orchestrator — auto-detects full vs incremental per provider)
+- [x] Staged to raw_ingestion_records with Provenance batch tracking
+- [x] Verified: OpenLibrary ISBN fetch, sync mode (781 records/day), full mode
+
+### Automation
+- [x] catalog:sync reads last_ingestion_at — null→full, set→incremental
+- [x] Nightly scheduler in routes/console.php (catalog:sync at 03:00)
+- [x] Admin "Fetch Changes" + "Force Full Sync" buttons on provider view page
+- [ ] BIBLIONET steps 76, 77, 80 — blocked on API credentials (https://elivip.gr)
 
 ### Notes
-- Bound BiblionetClientInterface → BiblionetClient in AppServiceProvider::register()
-- Rate limiting via usleep() between generator pages
-- Token cached in Laravel cache (shared across queue workers)
-- Steps 76, 77, 80 blocked on API credentials from https://elivip.gr
+- OpenLibrary RecentChanges endpoint uses real past dates only (future dates hang)
+- Provenance enum→VARCHAR migration required for multi-provider source_system values
+- Full sync from date stored in provider settings.full_sync_from (defaults to 1 year ago)
+- ToggleColumn in table for quick is_active / auto_sync toggling without opening Edit
 
 ---
 
-## Phase 5: Authority Matching (Steps 81-110)
+## Phase 5: Normalisation Pipeline (Steps 81-100)
+
+### Architecture
+Each provider has a **Mapper** that translates raw JSON payload fields into a
+provider-agnostic **NormalisedBookRecord** DTO. A shared **CatalogWriter** service
+then upserts into the FRBR tables. This is what moves records from
+`raw_ingestion_records` (status=pending) into `works / expressions / editions / authors`.
+
+```
+raw_ingestion_records (pending)
+    → MapperRegistry::for($sourceSystem)
+    → ProviderMapper::map($payload)  ← one per provider (OpenLibrary, BIBLIONET…)
+    → NormalisedBookRecord (DTO)      ← provider-agnostic FRBR shape
+    → CatalogWriter::write($dto)      ← upserts Work, Expression, Edition, Author
+    → raw_ingestion_records status = 'processed'
+```
+
+Why a mapper per provider? Because field names differ:
+- OpenLibrary: `title`, `isbn_13[]`, `publishers[]`, `publish_date`, `languages[].key`
+- BIBLIONET: completely different structure (TBD when credentials arrive)
+The DTO is the common language between them.
+
+### DTOs & Contracts
+- [ ] 81. MapperInterface contract (map(array $payload): NormalisedBookRecord)
+- [ ] 82. NormalisedBookRecord DTO (work title, expression language, edition ISBN/pages, authors[], publishers[])
+- [ ] 83. MapperRegistry (resolves mapper by source_system string)
+
+### OpenLibrary Mapper
+- [ ] 84. OpenLibraryMapper implements MapperInterface
+- [ ] 85. Map edition fields (isbn_10/13, pages, publish_date, publishers)
+- [ ] 86. Map language (languages[].key → strip /languages/ prefix)
+- [ ] 87. Map work title (from edition.title or fetched work record)
+- [ ] 88. Map authors (resolve /authors/ OLIDs → fetch if needed)
+- [ ] 89. Map subjects (subjects[] → Thema code lookup or free text)
+
+### BIBLIONET Mapper (blocked on credentials)
+- [ ] 90. BiblionetMapper implements MapperInterface (implement when API docs available)
+
+### Catalog Writer
+- [ ] 91. CatalogWriter service
+- [ ] 92. findOrCreateWork (match by title + author, or create new)
+- [ ] 93. findOrCreateExpression (match by work + language)
+- [ ] 94. createOrUpdateEdition (ISBN as unique key)
+- [ ] 95. attachAuthors (name variants, authority IDs later)
+- [ ] 96. attachPublisher
+- [ ] 97. Write provenance log entry (edition_provenance_log)
+
+### Job & Command
+- [ ] 98. ProcessRawIngestion job (reads pending records, runs mapper + writer)
+- [ ] 99. php artisan catalog:normalise command (dispatches jobs, --provider, --limit, --dry-run)
+- [ ] 100. Verify: raw record → works/editions/authors tables in admin
+
+---
+
+## Phase 6: Authority Matching (Steps 101-130)
 
 ### Support Utilities
-- [ ] 81. Greek text normalizer
-- [ ] 82. ISBN validator
-- [ ] 83. Normalizer tests
-- [ ] 84. ISBN tests
-- [ ] 85. Verify tests
+- [ ] 101. Greek text normalizer
+- [ ] 102. ISBN validator / formatter
+- [ ] 103. Normalizer tests
+- [ ] 104. ISBN tests
 
 ### VIAF Client
-- [ ] 86. Create client
-- [ ] 87. Search by name
-- [ ] 88. Search with dates
-- [ ] 89. Parse response
-- [ ] 90. Implement caching
-- [ ] 91. Error handling
-- [ ] 92. Test with known authors
+- [ ] 105. Create client + interface
+- [ ] 106. Search by name
+- [ ] 107. Search with birth/death dates
+- [ ] 108. Parse response
+- [ ] 109. Implement caching
+- [ ] 110. Error handling
+- [ ] 111. Test with known authors (Καζαντζάκης → VIAF 17227014)
 
 ### Wikidata Client
-- [ ] 93. Create client
-- [ ] 94. Entity search
-- [ ] 95. SPARQL queries
-- [ ] 96. Extract identifiers
-- [ ] 97. Caching
-- [ ] 98. Test
+- [ ] 112. Create client
+- [ ] 113. Entity search
+- [ ] 114. SPARQL queries (P31=Q5 for persons, P213 for ISNI)
+- [ ] 115. Extract identifiers (VIAF P214, ISNI P213, BNF P268)
+- [ ] 116. Caching
+- [ ] 117. Test
 
 ### Authority Matcher
-- [ ] 99. Match DTO
-- [ ] 100. Confidence scorer
-- [ ] 101. Matcher service
-- [ ] 102. Matching logic
-- [ ] 103. Best match selection
-- [ ] 104. Scorer tests
-- [ ] 105. Matcher tests
+- [ ] 118. MatchResult DTO (confidence float, matched_viaf, matched_wikidata)
+- [ ] 119. Confidence scorer (name similarity, birth year, nationality)
+- [ ] 120. AuthorityMatcher service
+- [ ] 121. Matching logic (VIAF-first, Wikidata fallback)
+- [ ] 122. Best match selection (>= 0.8 → auto-link, else review queue)
+- [ ] 123. Scorer tests
+- [ ] 124. Matcher tests
 
 ### Author Resolver
-- [ ] 106. Create resolver
-- [ ] 107. Local search
-- [ ] 108. Create-or-link
-- [ ] 109. Store variants
-- [ ] 110. Review queue
+- [ ] 125. AuthorResolver service
+- [ ] 126. Local search (existing authors by name variant)
+- [ ] 127. Create-or-link
+- [ ] 128. Store name variants
+- [ ] 129. Route low-confidence to review_queue
+- [ ] 130. Review queue admin page
 
 ---
 
-## Phase 6: Pipeline Services (Steps 111-135)
-
-### Parsers & DTOs
-- [ ] 111. BiblionetRecordDTO
-- [ ] 112. BiblionetParser
-- [ ] 113. Parsing logic
-- [ ] 114. Error handling
-- [ ] 115. Parser tests
-- [ ] 116. PublisherResolver
-- [ ] 117. Publisher matching
-- [ ] 118. Publisher tests
-
-### Work & Expression
-- [ ] 119. WorkResolver
-- [ ] 120. Work matching
-- [ ] 121. Author attachment
-- [ ] 122. Subject assignment
-- [ ] 123. Work tests
-- [ ] 124. ExpressionResolver
-- [ ] 125. Expression matching
-- [ ] 126. Contributors
-- [ ] 127. Translator detection
-- [ ] 128. Expression tests
-
-### Edition Creation
-- [ ] 129. EditionCreator
-- [ ] 130. ISBN uniqueness
-- [ ] 131. Composite key check
-- [ ] 132. Provenance log
-- [ ] 133. Events
-- [ ] 134. Pipeline integration
-- [ ] 135. Integration test
-
----
-
-## Phase 7: Search & Indexing (Steps 136-155)
+## Phase 7: Search & Indexing
 
 - [ ] 136. Install Elasticsearch PHP client
 - [ ] 137. Create works index mapping

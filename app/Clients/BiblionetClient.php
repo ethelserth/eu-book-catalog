@@ -11,6 +11,7 @@ use App\Clients\Exceptions\BiblionetRateLimitException;
 use DateTimeInterface;
 use Generator;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -31,9 +32,9 @@ class BiblionetClient implements BiblionetClientInterface
 
     public function __construct(
         private readonly string $baseUrl,
-        private readonly string $clientId,
-        private readonly string $clientSecret,
-        private readonly int $rateLimit, // requests per second
+        private readonly ?string $clientId,
+        private readonly ?string $clientSecret,
+        private readonly int $rateLimit,
     ) {}
 
     // -------------------------------------------------------------------------
@@ -55,8 +56,8 @@ class BiblionetClient implements BiblionetClientInterface
         }
 
         $response = Http::asForm()->post("{$this->baseUrl}/token", [
-            'grant_type'    => 'client_credentials',
-            'client_id'     => $this->clientId,
+            'grant_type' => 'client_credentials',
+            'client_id' => $this->clientId,
             'client_secret' => $this->clientSecret,
         ]);
 
@@ -73,8 +74,8 @@ class BiblionetClient implements BiblionetClientInterface
             );
         }
 
-        $data      = $response->json();
-        $token     = $data['access_token'] ?? null;
+        $data = $response->json();
+        $token = $data['access_token'] ?? null;
         $expiresIn = (int) ($data['expires_in'] ?? 3600);
 
         if (! $token) {
@@ -86,7 +87,7 @@ class BiblionetClient implements BiblionetClientInterface
 
         Cache::put(self::TOKEN_CACHE_KEY, $token, $ttl);
 
-        Log::info('BiblionetClient: authenticated, token valid for ' . $ttl . 's');
+        Log::info('BiblionetClient: authenticated, token valid for '.$ttl.'s');
     }
 
     // -------------------------------------------------------------------------
@@ -101,7 +102,7 @@ class BiblionetClient implements BiblionetClientInterface
     public function fetchBooks(int $page = 1, int $perPage = 100): array
     {
         $response = $this->get('/books', [
-            'page'     => $page,
+            'page' => $page,
             'per_page' => $perPage,
         ]);
 
@@ -120,7 +121,7 @@ class BiblionetClient implements BiblionetClientInterface
      */
     public function fetchBooksSince(DateTimeInterface $since): Generator
     {
-        $page  = 1;
+        $page = 1;
         $since = $since->format('Y-m-d');
 
         do {
@@ -128,11 +129,11 @@ class BiblionetClient implements BiblionetClientInterface
 
             $response = $this->get('/books', [
                 'modified_since' => $since,
-                'page'           => $page,
-                'per_page'       => 100,
+                'page' => $page,
+                'per_page' => 100,
             ]);
 
-            $books   = $response['data']    ?? $response;
+            $books = $response['data'] ?? $response;
             $hasMore = $response['has_more'] ?? (count($books) === 100);
 
             foreach ($books as $book) {
@@ -197,7 +198,7 @@ class BiblionetClient implements BiblionetClientInterface
      * @return array<string, mixed>
      */
     private function parseResponse(
-        \Illuminate\Http\Client\Response $response,
+        Response $response,
         string $endpoint,
     ): array {
         if ($response->status() === 401 || $response->status() === 403) {
