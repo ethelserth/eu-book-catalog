@@ -35,4 +35,12 @@ return [
         ],
     ],
 
+    'biblionet' => [
+        'base_url'      => env('BIBLIONET_BASE_URL', 'https://biblionet.gr/wp-json/biblionetwebservice'),
+        'client_id'     => env('BIBLIONET_CLIENT_ID'),
+        'client_secret' => env('BIBLIONET_CLIENT_SECRET'),
+        // Max requests per second. BIBLIONET terms require polite crawling.
+        'rate_limit'    => (int) env('BIBLIONET_RATE_LIMIT', 1),
+    ],
+
 ];

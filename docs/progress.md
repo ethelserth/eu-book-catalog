@@ -7,7 +7,7 @@
 | 1 | Foundation | ✓ Complete |
 | 2 | Filament Admin | ✓ Complete |
 | 3 | Thema Seeding | ✓ Complete |
-| 4 | BIBLIONET Client | Not Started |
+| 4 | BIBLIONET Client | In Progress |
 | 5 | Authority Matching | Not Started |
 | 6 | Pipeline Services | Not Started |
 | 7 | Search & Indexing | Not Started |
@@ -106,23 +106,29 @@
 ## Phase 4: BIBLIONET Client (Steps 66-80)
 
 ### Setup
-- [ ] 66. Register for API access
-- [ ] 67. Create configuration
-- [ ] 68. Create client interface
-- [ ] 69. Implement client
-- [ ] 70. Create exceptions
+- [ ] 66. Register for API access  ← BLOCKER: needs real credentials from elivip.gr
+- [x] 67. Create configuration (config/services.php biblionet block)
+- [x] 68. Create client interface (app/Clients/Contracts/BiblionetClientInterface.php)
+- [x] 69. Implement client (app/Clients/BiblionetClient.php — OAuth2, retry, throttle)
+- [x] 70. Create exceptions (BiblionetAuthException, BiblionetRateLimitException, BiblionetApiException)
 
 ### Fetching
-- [ ] 71. Create fetch command
-- [ ] 72. Implement staging logic
-- [ ] 73. Create provenance record
-- [ ] 74. Link raw records
-- [ ] 75. Update provenance stats
-- [ ] 76. Test small fetch
-- [ ] 77. Verify in admin
-- [ ] 78. Incremental sync
-- [ ] 79. Scheduled task
-- [ ] 80. Test full fetch
+- [x] 71. Create fetch command (php artisan biblionet:fetch)
+- [x] 72. Implement staging logic (updateOrCreate into raw_ingestion_records)
+- [x] 73. Create provenance record per batch
+- [x] 74. Link raw records to provenance
+- [x] 75. Update provenance stats on completion
+- [ ] 76. Test small fetch  ← needs API credentials
+- [ ] 77. Verify in admin  ← needs API credentials
+- [x] 78. Incremental sync (--since= option, defaults to yesterday)
+- [x] 79. Scheduled task (routes/console.php — daily at 03:00)
+- [ ] 80. Test full fetch  ← needs API credentials
+
+### Notes
+- Bound BiblionetClientInterface → BiblionetClient in AppServiceProvider::register()
+- Rate limiting via usleep() between generator pages
+- Token cached in Laravel cache (shared across queue workers)
+- Steps 76, 77, 80 blocked on API credentials from https://elivip.gr
 
 ---
 
