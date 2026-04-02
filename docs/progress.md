@@ -1,0 +1,297 @@
+# Implementation Progress
+
+## Overview
+
+| Phase | Name | Status |
+|-------|------|--------|
+| 1 | Foundation | ✓ Complete |
+| 2 | Filament Admin | Not Started |
+| 3 | Thema Seeding | Not Started |
+| 4 | BIBLIONET Client | Not Started |
+| 5 | Authority Matching | Not Started |
+| 6 | Pipeline Services | Not Started |
+| 7 | Search & Indexing | Not Started |
+| 8 | Public API | Not Started |
+| 9 | Testing & Deployment | Not Started |
+| 10 | Federation | Not Started |
+
+---
+
+## Phase 1: Foundation ✓ COMPLETE
+
+- [x] Laravel project created
+- [x] PostgreSQL configured
+- [x] Nginx configured
+- [x] Required packages installed
+- [x] Directory structure created
+- [x] HasUuid trait
+- [x] All 15 migrations
+- [x] All 12 Eloquent models
+- [x] Relationships verified
+
+---
+
+## Phase 2: Filament Admin (Steps 29-55)
+
+### Installation
+- [ ] 29. Install Filament
+- [ ] 30. Create admin user
+- [ ] 31. Configure panel
+- [ ] 32. Update User model
+
+### Entity Resources
+- [ ] 33. AuthorResource
+- [ ] 34. AuthorNameVariantResource
+- [ ] 35. PublisherResource
+- [ ] 36. WorkResource
+- [ ] 37. ExpressionResource
+- [ ] 38. EditionResource
+- [ ] 39. PublisherNameVariantResource
+- [ ] 40. ThemaSubjectResource
+- [ ] 41. ProvenanceResource
+- [ ] 42. EditionProvenanceLogResource
+- [ ] 43. RawIngestionRecordResource
+- [ ] 44. ReviewQueueResource
+- [ ] 45. Verify all resources
+
+### Dashboard & Custom Pages
+- [ ] 46. Dashboard widgets
+- [ ] 47. Review Queue manager
+- [ ] 48. Author merge page
+- [ ] 49. Work merge page
+- [ ] 50. Ingestion monitor
+- [ ] 51. Quality report page
+- [ ] 52. Test custom pages
+
+### Polish
+- [ ] 53. Navigation structure
+- [ ] 54. Global search
+- [ ] 55. Final testing
+
+---
+
+## Phase 3: Thema Seeding (Steps 56-65)
+
+- [ ] 56. Download from EDItEUR
+- [ ] 57. Analyze structure
+- [ ] 58. Plan Greek headings
+- [ ] 59. Create seeder class
+- [ ] 60. Parse XML/JSON
+- [ ] 61. Handle hierarchy order
+- [ ] 62. Implement seeder
+- [ ] 63. Run seeder
+- [ ] 64. Verify in admin
+- [ ] 65. Create update command
+
+---
+
+## Phase 4: BIBLIONET Client (Steps 66-80)
+
+### Setup
+- [ ] 66. Register for API access
+- [ ] 67. Create configuration
+- [ ] 68. Create client interface
+- [ ] 69. Implement client
+- [ ] 70. Create exceptions
+
+### Fetching
+- [ ] 71. Create fetch command
+- [ ] 72. Implement staging logic
+- [ ] 73. Create provenance record
+- [ ] 74. Link raw records
+- [ ] 75. Update provenance stats
+- [ ] 76. Test small fetch
+- [ ] 77. Verify in admin
+- [ ] 78. Incremental sync
+- [ ] 79. Scheduled task
+- [ ] 80. Test full fetch
+
+---
+
+## Phase 5: Authority Matching (Steps 81-110)
+
+### Support Utilities
+- [ ] 81. Greek text normalizer
+- [ ] 82. ISBN validator
+- [ ] 83. Normalizer tests
+- [ ] 84. ISBN tests
+- [ ] 85. Verify tests
+
+### VIAF Client
+- [ ] 86. Create client
+- [ ] 87. Search by name
+- [ ] 88. Search with dates
+- [ ] 89. Parse response
+- [ ] 90. Implement caching
+- [ ] 91. Error handling
+- [ ] 92. Test with known authors
+
+### Wikidata Client
+- [ ] 93. Create client
+- [ ] 94. Entity search
+- [ ] 95. SPARQL queries
+- [ ] 96. Extract identifiers
+- [ ] 97. Caching
+- [ ] 98. Test
+
+### Authority Matcher
+- [ ] 99. Match DTO
+- [ ] 100. Confidence scorer
+- [ ] 101. Matcher service
+- [ ] 102. Matching logic
+- [ ] 103. Best match selection
+- [ ] 104. Scorer tests
+- [ ] 105. Matcher tests
+
+### Author Resolver
+- [ ] 106. Create resolver
+- [ ] 107. Local search
+- [ ] 108. Create-or-link
+- [ ] 109. Store variants
+- [ ] 110. Review queue
+
+---
+
+## Phase 6: Pipeline Services (Steps 111-135)
+
+### Parsers & DTOs
+- [ ] 111. BiblionetRecordDTO
+- [ ] 112. BiblionetParser
+- [ ] 113. Parsing logic
+- [ ] 114. Error handling
+- [ ] 115. Parser tests
+- [ ] 116. PublisherResolver
+- [ ] 117. Publisher matching
+- [ ] 118. Publisher tests
+
+### Work & Expression
+- [ ] 119. WorkResolver
+- [ ] 120. Work matching
+- [ ] 121. Author attachment
+- [ ] 122. Subject assignment
+- [ ] 123. Work tests
+- [ ] 124. ExpressionResolver
+- [ ] 125. Expression matching
+- [ ] 126. Contributors
+- [ ] 127. Translator detection
+- [ ] 128. Expression tests
+
+### Edition Creation
+- [ ] 129. EditionCreator
+- [ ] 130. ISBN uniqueness
+- [ ] 131. Composite key check
+- [ ] 132. Provenance log
+- [ ] 133. Events
+- [ ] 134. Pipeline integration
+- [ ] 135. Integration test
+
+---
+
+## Phase 7: Search & Indexing (Steps 136-155)
+
+- [ ] 136. Install Elasticsearch PHP client
+- [ ] 137. Create works index mapping
+- [ ] 138. Create editions index mapping
+- [ ] 139. Create authors index mapping
+- [ ] 140. Configure multilingual analyzers
+- [ ] 141. Create IndexWorkJob
+- [ ] 142. Create IndexEditionJob
+- [ ] 143. Create IndexAuthorJob
+- [ ] 144. Subscribe to domain events
+- [ ] 145. Implement bulk indexing
+- [ ] 146. Create search:reindex command
+- [ ] 147. Create CatalogSearchService
+- [ ] 148. Implement multi-field search
+- [ ] 149. Implement faceted filtering
+- [ ] 150. Add search to Filament
+- [ ] 151. Test search accuracy
+- [ ] 152. Test search performance
+- [ ] 153. Configure index aliases
+- [ ] 154. Implement zero-downtime reindexing
+- [ ] 155. Document search API
+
+---
+
+## Phase 8: Public API (Steps 156-175)
+
+- [ ] 156. Create WorkController
+- [ ] 157. Create EditionController
+- [ ] 158. Create AuthorController
+- [ ] 159. Create SearchController
+- [ ] 160. Create WorkResource (JSON)
+- [ ] 161. Create EditionResource (JSON)
+- [ ] 162. Create AuthorResource (JSON)
+- [ ] 163. Implement pagination
+- [ ] 164. Implement sparse fieldsets
+- [ ] 165. Implement include parameter
+- [ ] 166. Implement filtering
+- [ ] 167. Implement sorting
+- [ ] 168. Create JSON-LD output for works
+- [ ] 169. Create JSON-LD output for authors
+- [ ] 170. Add content negotiation
+- [ ] 171. Install Laravel Sanctum
+- [ ] 172. Implement API token auth
+- [ ] 173. Implement rate limiting
+- [ ] 174. Generate OpenAPI spec
+- [ ] 175. Create API documentation
+
+---
+
+## Phase 9: Testing & Deployment (Steps 176-190)
+
+- [ ] 176. Unit tests for Support classes
+- [ ] 177. Unit tests for Services
+- [ ] 178. Unit tests for Clients (mocked)
+- [ ] 179. Feature tests for API endpoints
+- [ ] 180. Feature tests for ingestion pipeline
+- [ ] 181. Feature tests for search
+- [ ] 182. Achieve 80%+ coverage
+- [ ] 183. Create Docker Compose (dev)
+- [ ] 184. Create Dockerfile (production)
+- [ ] 185. Configure PostgreSQL container
+- [ ] 186. Configure Redis container
+- [ ] 187. Configure Elasticsearch container
+- [ ] 188. Configure queue workers
+- [ ] 189. Create deployment scripts
+- [ ] 190. Document deployment process
+
+---
+
+## Phase 10: Federation (Steps 191-200)
+
+- [ ] 191. Design federation protocol
+- [ ] 192. Implement OAI-PMH endpoint
+- [ ] 193. Create shared identifier scheme
+- [ ] 194. Implement node registration
+- [ ] 195. Implement record harvesting
+- [ ] 196. Implement cross-node deduplication
+- [ ] 197. Create Wikidata contribution workflow
+- [ ] 198. Document federation protocol
+- [ ] 199. Pilot with partner institution
+- [ ] 200. Refine based on pilot feedback
+
+---
+
+## Notes
+
+### Phase 1 Completion Notes
+- Used PostgreSQL for UUID support
+- All models use HasUuid trait
+- FRBR hierarchy verified: Edition → Expression → Work → Authors
+- Test data created through tinker
+
+### Decisions Made
+- Standard Laravel structure (not domain-driven directories)
+- Filament moved to Phase 2 (early admin visibility)
+- Generic raw_ingestion_records table (not source-specific)
+- Thema code as primary key (not UUID)
+
+### Blockers
+- BIBLIONET API credentials needed for Phase 4
+- Thema Greek translations may need manual work
+
+### Resources
+- BIBLIONET: https://elivip.gr/en/biblionet
+- Thema: https://www.editeur.org/151/Thema/
+- VIAF: https://viaf.org
+- Wikidata: https://www.wikidata.org
