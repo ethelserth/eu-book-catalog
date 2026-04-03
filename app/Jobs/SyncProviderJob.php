@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Enums\ProviderType;
 use App\Models\ProviderCredential;
 use App\Models\User;
 use Filament\Notifications\Notification;
@@ -31,7 +32,7 @@ class SyncProviderJob implements ShouldQueue
     public int $tries = 1;
 
     public function __construct(
-        private readonly string $provider,
+        private readonly ProviderType $provider,
         private readonly bool $forceFull,
         private readonly int $triggeredByUserId,
     ) {}
@@ -39,7 +40,7 @@ class SyncProviderJob implements ShouldQueue
     public function handle(): void
     {
         $args = [
-            '--provider' => $this->provider,
+            '--provider' => $this->provider->value,
             '--force' => true,
         ];
 

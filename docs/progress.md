@@ -104,16 +104,16 @@
 
 ---
 
-## Phase 4: Multi-Provider Ingestion ✓ COMPLETE
+## Phase 4: Multi-Provider Ingestion — Partial
 
-### Infrastructure
+### Infrastructure ✓
 - [x] 67. Create configuration (config/services.php — biblionet + openlibrary blocks)
 - [x] 68. Create BiblionetClientInterface + OpenLibraryClientInterface contracts
 - [x] 69. Implement BiblionetClient (OAuth2, retry, throttle)
-- [x] 70. Implement OpenLibraryClient (User-Agent, timeout 30s, retry on 5xx/timeout)
+- [x] 70. Implement OpenLibraryClient (User-Agent, timeout 30s, retry on 5xx/timeout, fetchEdition)
 - [x] Create BiblionetAuthException, BiblionetRateLimitException, BiblionetApiException
 
-### Provider Credentials Admin
+### Provider Credentials Admin ✓
 - [x] ProviderCredential model (UUID, encrypted credentials, JSON settings)
 - [x] Migration: provider_credentials table (is_active, auto_sync, last_ingestion_at)
 - [x] Migration: convert provenance.source_system from enum CHECK to plain VARCHAR
@@ -121,24 +121,46 @@
 - [x] Form auto-fills defaults when provider is selected (->live() + afterStateUpdated)
 - [x] AppServiceProvider: DB-backed credential injection with Schema::hasTable() guard
 
-### Fetch Commands
+### Fetch Commands ✓
 - [x] php artisan biblionet:fetch (--full, --since, --limit, --dry-run)
 - [x] php artisan openlibrary:fetch (--isbn, --work, --search, --full, --sync, --since, --date, --limit, --dry-run)
 - [x] php artisan catalog:sync (orchestrator — auto-detects full vs incremental per provider)
 - [x] Staged to raw_ingestion_records with Provenance batch tracking
-- [x] Verified: OpenLibrary ISBN fetch, sync mode (781 records/day), full mode
+- [x] Verified: OpenLibrary ISBN fetch works; sync mode fetches ~700 editions/day via RecentChanges
 
-### Automation
+### Automation ✓
 - [x] catalog:sync reads last_ingestion_at — null→full, set→incremental
 - [x] Nightly scheduler in routes/console.php (catalog:sync at 03:00)
-- [x] Admin "Fetch Changes" + "Force Full Sync" buttons on provider view page
-- [ ] BIBLIONET steps 76, 77, 80 — blocked on API credentials (https://elivip.gr)
+- [x] Cron installed: * * * * * php artisan schedule:run
+- [x] Async sync via SyncProviderJob + database queue (QUEUE_CONNECTION=database)
+- [x] Admin "Fetch Changes" + "Force Full Sync" buttons dispatch job, bell notification on completion
+- [x] Filament database notifications (notifications.data migrated to jsonb for PostgreSQL)
+
+### BIBLIONET Provider ✓ (completed session 2026-04-03)
+- [x] `ethelserth/biblionet-laravel` library installed and wired up
+- [x] `ProviderType` backed enum (Biblionet, OpenLibrary) with `HasLabel` — replaces raw array definitions
+- [x] `ProviderDefinition` readonly DTO — typed credential/setting defaults per provider
+- [x] `ProviderCredential` model casts `provider` to `ProviderType`; `SyncProviderJob` and `CatalogSync` updated
+- [x] `AppServiceProvider` overrides library singleton with DB credentials (username/password from admin)
+- [x] `biblionet:fetch` rewritten — incremental via `getTitlesByLastUpdate()`, full via `getMonthTitles()` (summaries)
+- [x] Migration: `add_record_type_to_raw_ingestion_records` applied
+- [x] Library bug fixed: `getTitle()` and `getTitleByIsbn()` unwrap `$data[0][0]` (consistent with `getSubject`/`getLanguage`)
+- [x] Tested: single title, incremental fetch, staging to `raw_ingestion_records`
+- [x] Rate limit guard: 1 000 requests/day hard limit; default budget 950 with `--max-requests` override
+- [x] Auth error handling: any `BiblionetException` bubbles to `handle()`, stops command, shows clear message
+
+### Outstanding ✗
+- [ ] `openlibrary:import-dump` needs rewrite — URL streaming broken, must use local files
+- [ ] `openlibrary:fetch --sync` only captures editions; works and authors from RecentChanges ignored
+- [ ] Author OLIDs not pre-fetched and staged alongside editions during sync
+- [ ] Full Biblionet historical fetch not yet run (use `biblionet:fetch --full --since=YYYY-MM`)
+      Note: 1 000 requests/day limit — spread full historical import across multiple days
 
 ### Notes
-- OpenLibrary RecentChanges endpoint uses real past dates only (future dates hang)
-- Provenance enum→VARCHAR migration required for multi-provider source_system values
-- Full sync from date stored in provider settings.full_sync_from (defaults to 1 year ago)
-- ToggleColumn in table for quick is_active / auto_sync toggling without opening Edit
+- See docs/providers/openlibrary.md for full OpenLibrary data model, gaps, and plans
+- OpenLibrary dump files go in storage/providers/openlibrary/ (user downloads manually)
+- RecentChanges endpoint: use real past dates only (future dates hang the connection)
+- Full historical sync via dump files, not RecentChanges day-walking (too slow for years of history)
 
 ---
 
@@ -164,35 +186,48 @@ Why a mapper per provider? Because field names differ:
 - BIBLIONET: completely different structure (TBD when credentials arrive)
 The DTO is the common language between them.
 
+### Prerequisites (do first)
+- [ ] 81. Migration: add `record_type` VARCHAR to raw_ingestion_records (edition, work, author, book…)
+- [ ] 82. Rewrite openlibrary:import-dump to read local files from storage/providers/openlibrary/
+         - Auto-detect latest dump file in directory
+         - Support combined dump (all types) and per-type files
+         - Infer record_type from /type/ column in TSV
+         - Skip /type/redirect and /type/delete records
+         - Use gzopen() for local .gz files (not compress.zlib:// URL approach)
+         - php artisan openlibrary:import-dump [--file=path] [--type=editions|works|authors|all] [--limit=N] [--dry-run]
+
 ### DTOs & Contracts
-- [ ] 81. MapperInterface contract (map(array $payload): NormalisedBookRecord)
-- [ ] 82. NormalisedBookRecord DTO (work title, expression language, edition ISBN/pages, authors[], publishers[])
-- [ ] 83. MapperRegistry (resolves mapper by source_system string)
+- [ ] 83. MapperInterface contract (map(array $payload, string $recordType): NormalisedRecord[])
+- [ ] 84. NormalisedWorkRecord DTO
+- [ ] 85. NormalisedExpressionRecord DTO (inferred from edition language)
+- [ ] 86. NormalisedEditionRecord DTO (isbn, pages, publish_year, publisher)
+- [ ] 87. NormalisedAuthorRecord DTO (name, viaf_id, wikidata_id, isni)
+- [ ] 88. MapperRegistry (resolves mapper by source_system string)
 
 ### OpenLibrary Mapper
-- [ ] 84. OpenLibraryMapper implements MapperInterface
-- [ ] 85. Map edition fields (isbn_10/13, pages, publish_date, publishers)
-- [ ] 86. Map language (languages[].key → strip /languages/ prefix)
-- [ ] 87. Map work title (from edition.title or fetched work record)
-- [ ] 88. Map authors (resolve /authors/ OLIDs → fetch if needed)
-- [ ] 89. Map subjects (subjects[] → Thema code lookup or free text)
+- [ ] 89. OpenLibraryMapper implements MapperInterface
+- [ ] 90. map() routes to mapEdition / mapWork / mapAuthor based on record_type
+- [ ] 91. mapEdition: isbn_10/13, pages, publish_date, publishers, language, work OLID
+- [ ] 92. mapWork: title, description, subjects (LCSH stored raw)
+- [ ] 93. mapAuthor: name, alternate_names, birth/death dates, remote_ids (VIAF, Wikidata, ISNI)
+- [ ] 94. Process order: authors first → works → editions (so FK references resolve)
 
 ### BIBLIONET Mapper (blocked on credentials)
-- [ ] 90. BiblionetMapper implements MapperInterface (implement when API docs available)
+- [ ] 95. BiblionetMapper implements MapperInterface (implement when API docs available)
 
 ### Catalog Writer
-- [ ] 91. CatalogWriter service
-- [ ] 92. findOrCreateWork (match by title + author, or create new)
-- [ ] 93. findOrCreateExpression (match by work + language)
-- [ ] 94. createOrUpdateEdition (ISBN as unique key)
-- [ ] 95. attachAuthors (name variants, authority IDs later)
-- [ ] 96. attachPublisher
-- [ ] 97. Write provenance log entry (edition_provenance_log)
+- [ ] 96. CatalogWriter service (provider-agnostic — knows only FRBR DTOs)
+- [ ] 97. findOrCreateWork (match by title + author fingerprint, or create new)
+- [ ] 98. findOrCreateExpression (match by work + language code)
+- [ ] 99. createOrUpdateEdition (ISBN as unique key; composite key fallback)
+- [ ] 100. attachAuthors (name variants; authority IDs from DTO)
+- [ ] 101. attachPublisher (findOrCreate by name)
+- [ ] 102. Write edition_provenance_log entry
 
 ### Job & Command
-- [ ] 98. ProcessRawIngestion job (reads pending records, runs mapper + writer)
-- [ ] 99. php artisan catalog:normalise command (dispatches jobs, --provider, --limit, --dry-run)
-- [ ] 100. Verify: raw record → works/editions/authors tables in admin
+- [ ] 103. ProcessRawIngestion job (reads pending records, routes by source_system+record_type)
+- [ ] 104. php artisan catalog:normalise (--provider, --record-type, --limit, --dry-run)
+- [ ] 105. Verify: raw record → works/editions/authors tables visible in admin
 
 ---
 

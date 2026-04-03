@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "adfbc7552ecc1ea74e4a09ba446c3149",
+    "content-hash": "20c9f6432706a9a6bc2b19d9d4e7f46e",
     "packages": [
         {
             "name": "blade-ui-kit/blade-heroicons",
@@ -1078,6 +1078,128 @@
                 }
             ],
             "time": "2025-03-06T22:45:56+00:00"
+        },
+        {
+            "name": "ethelserth/biblionet-laravel",
+            "version": "v1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/ethelserth/biblionet-laravel.git",
+                "reference": "b41751b432bee0aec07bc171b2d046b758a72e4c"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/ethelserth/biblionet-laravel/zipball/b41751b432bee0aec07bc171b2d046b758a72e4c",
+                "reference": "b41751b432bee0aec07bc171b2d046b758a72e4c",
+                "shasum": ""
+            },
+            "require": {
+                "ethelserth/biblionet-php": "^1.0",
+                "guzzlehttp/guzzle": "^7.0",
+                "guzzlehttp/psr7": "^2.0",
+                "illuminate/support": "^10.0|^11.0|^12.0|^13.0",
+                "php": "^8.1"
+            },
+            "require-dev": {
+                "mockery/mockery": "^1.6",
+                "orchestra/testbench": "^8.0|^9.0|^10.0",
+                "phpunit/phpunit": "^11.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "aliases": {
+                        "Biblionet": "Ethelserth\\BiblionetLaravel\\Facades\\Biblionet"
+                    },
+                    "providers": [
+                        "Ethelserth\\BiblionetLaravel\\BiblionetServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Ethelserth\\BiblionetLaravel\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Agathoklis Tsiokos",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Laravel integration for the Biblionet Greek books API client",
+            "keywords": [
+                "api",
+                "biblionet",
+                "books",
+                "client",
+                "greek",
+                "laravel"
+            ],
+            "support": {
+                "issues": "https://github.com/ethelserth/biblionet-laravel/issues",
+                "source": "https://github.com/ethelserth/biblionet-laravel/tree/v1.0.0"
+            },
+            "time": "2026-04-03T18:58:46+00:00"
+        },
+        {
+            "name": "ethelserth/biblionet-php",
+            "version": "1.0.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/ethelserth/biblionet-php.git",
+                "reference": "80afbee339b3c83e622edc01c53c5baa52c85b3e"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/ethelserth/biblionet-php/zipball/80afbee339b3c83e622edc01c53c5baa52c85b3e",
+                "reference": "80afbee339b3c83e622edc01c53c5baa52c85b3e",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^8.1",
+                "psr/http-client": "^1.0",
+                "psr/http-factory": "^1.0"
+            },
+            "require-dev": {
+                "guzzlehttp/guzzle": "^7.0",
+                "guzzlehttp/psr7": "^2.0",
+                "phpunit/phpunit": "^11.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Ethelserth\\Biblionet\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Agathoklis Tsiokos",
+                    "role": "Developer"
+                }
+            ],
+            "description": "A framework-agnostic PHP client for the Biblionet Greek books API",
+            "keywords": [
+                "api",
+                "bibliographic",
+                "biblionet",
+                "books",
+                "client",
+                "greek"
+            ],
+            "support": {
+                "issues": "https://github.com/ethelserth/biblionet-php/issues",
+                "source": "https://github.com/ethelserth/biblionet-php/tree/v1.0.1"
+            },
+            "time": "2026-04-03T20:01:25+00:00"
         },
         {
             "name": "filament/actions",

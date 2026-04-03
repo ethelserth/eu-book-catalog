@@ -29,7 +29,16 @@ class OpenLibraryClient implements OpenLibraryClientInterface
         // OL returns 301 → /books/OL123M.json, then 200 with the edition record.
         // Laravel's HTTP client follows redirects automatically.
         // A 404 means OL has no record for this ISBN — return null, not an error.
+        // We must throttle here instead of routing through get() because get()
+        // calls guardResponse() which throws on 404, but 404 is valid for ISBN lookups.
+        $this->throttle();
+
         $response = Http::withUserAgent($this->userAgent)
+            ->timeout(30)
+            ->retry(3, 1000, function (\Throwable $e) {
+                return $e instanceof ConnectionException
+                    || ($e instanceof RequestException && $e->response->serverError());
+            })
             ->get("{$this->baseUrl}/isbn/{$isbn}.json");
 
         if ($response->notFound()) {
@@ -72,8 +81,6 @@ class OpenLibraryClient implements OpenLibraryClientInterface
 
     public function search(string $query, int $limit = 20, int $offset = 0): array
     {
-        $this->throttle();
-
         return $this->get('/search.json', [
             'q' => $query,
             'limit' => $limit,

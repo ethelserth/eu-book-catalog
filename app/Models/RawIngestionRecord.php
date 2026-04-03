@@ -15,6 +15,7 @@ class RawIngestionRecord extends Model
     protected $fillable = [
         'source_system',
         'source_record_id',
+        'record_type',
         'payload',
         'status',
         'provenance_id',

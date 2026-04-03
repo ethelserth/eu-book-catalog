@@ -8,6 +8,7 @@
     "require": {
         "php": "^8.3",
         "doctrine/dbal": "^4.4",
+        "ethelserth/biblionet-laravel": "^1.0",
         "filament/filament": "^4.0",
         "guzzlehttp/guzzle": "^7.10",
         "laravel/framework": "^13.0",

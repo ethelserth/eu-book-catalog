@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Filament\Resources\ProviderCredentials\Schemas;
 
-use App\Models\ProviderCredential;
+use App\Enums\ProviderType;
 use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Forms\Set;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 
 class ProviderCredentialForm
@@ -25,36 +25,22 @@ class ProviderCredentialForm
                 ->schema([
                     Select::make('provider')
                         ->label('Provider')
-                        ->options(
-                            collect(ProviderCredential::providerDefinitions())
-                                ->mapWithKeys(fn ($def, $key) => [$key => $def['label']])
-                                ->toArray()
-                        )
+                        ->options(ProviderType::class)
                         ->required()
                         ->unique(ignoreRecord: true)
                         ->helperText('Selecting a provider pre-fills defaults. Cannot be changed after creation.')
                         ->disabledOn('edit')
-                        // ->live() re-renders the form on change so afterStateUpdated fires.
                         ->live()
-                        ->afterStateUpdated(function (?string $state, Set $set): void {
+                        ->afterStateUpdated(function (?ProviderType $state, Set $set): void {
                             if (! $state) {
                                 return;
                             }
 
-                            $def = ProviderCredential::providerDefinitions()[$state] ?? null;
+                            $definition = $state->definition();
 
-                            if (! $def) {
-                                return;
-                            }
-
-                            // Auto-fill the label from the definition.
-                            $set('label', $def['label']);
-
-                            // Pre-populate credential and settings KeyValue tables with
-                            // the provider's expected keys and sensible defaults.
-                            // The user can still edit/delete them before saving.
-                            $set('credentials', $def['credential_defaults'] ?? []);
-                            $set('settings', $def['setting_defaults'] ?? []);
+                            $set('label', $definition->label);
+                            $set('credentials', $definition->credentialDefaults);
+                            $set('settings', $definition->settingDefaults);
                         }),
 
                     TextInput::make('label')
@@ -71,9 +57,6 @@ class ProviderCredentialForm
                     'Refer to the provider definition for expected keys.'
                 )
                 ->schema([
-                    // KeyValue component renders a dynamic key→value table.
-                    // The admin adds rows for each required credential key.
-                    // Values are encrypted transparently by the model cast.
                     KeyValue::make('credentials')
                         ->label('Credential Fields')
                         ->keyLabel('Key')

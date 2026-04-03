@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Enums\ProviderType;
 use App\Models\ProviderCredential;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -52,7 +53,7 @@ class CatalogSync extends Command
 
         foreach ($providers as $provider) {
             $this->newLine();
-            $this->info("── {$provider->label} [{$provider->provider}] ──");
+            $this->info("── {$provider->label} [{$provider->provider->value}] ──");
 
             $command = $this->buildCommand($provider, $forceFull, $dryRun);
 
@@ -81,7 +82,7 @@ class CatalogSync extends Command
             } catch (\Throwable $e) {
                 $this->error("  ✗ Exception: {$e->getMessage()}");
                 Log::error('catalog:sync provider failed', [
-                    'provider' => $provider->provider,
+                    'provider' => $provider->provider->value,
                     'error' => $e->getMessage(),
                 ]);
                 $allOk = false;
@@ -115,15 +116,13 @@ class CatalogSync extends Command
 
         return match ($provider->provider) {
 
-            'openlibrary' => $doFull
+            ProviderType::OpenLibrary => $doFull
                 ? 'openlibrary:fetch --full --since='.$this->fullSyncFrom($provider).$dry
                 : 'openlibrary:fetch --sync --date='.$provider->last_ingestion_at->toDateString().$dry,
 
-            'biblionet' => $doFull
+            ProviderType::Biblionet => $doFull
                 ? 'biblionet:fetch --full'.$dry
                 : 'biblionet:fetch --since='.$provider->last_ingestion_at->toDateString().$dry,
-
-            default => null,
         };
     }
 

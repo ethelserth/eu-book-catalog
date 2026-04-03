@@ -269,7 +269,7 @@ class OpenLibraryFetch extends Command
         $perPage = min($limit ?? 100, 100);
         $result = $this->client->search($query, $perPage);
         $docs = $result['docs'] ?? [];
-        $this->info("  Found {$result['numFound']} total, returning ".count($docs));
+        $this->info('  Found '.($result['numFound'] ?? '?').' total, returning '.count($docs));
 
         return $docs;
     }
@@ -344,9 +344,18 @@ class OpenLibraryFetch extends Command
     {
         $sourceId = ltrim($record['key'] ?? ($record['_isbn_queried'] ?? uniqid('ol-')), '/');
 
+        // Derive record_type from the key prefix: "books/OL…M" → "edition", "works/…" → "work", "authors/…" → "author"
+        $recordType = match (true) {
+            str_starts_with($sourceId, 'books/') => 'edition',
+            str_starts_with($sourceId, 'works/') => 'work',
+            str_starts_with($sourceId, 'authors/') => 'author',
+            default => null,
+        };
+
         RawIngestionRecord::updateOrCreate(
             ['source_system' => 'openlibrary', 'source_record_id' => $sourceId],
             [
+                'record_type' => $recordType,
                 'payload' => $record,
                 'status' => 'pending',
                 'provenance_id' => $provenance->id,

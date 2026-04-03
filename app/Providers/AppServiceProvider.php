@@ -1,12 +1,16 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Providers;
 
-use App\Clients\BiblionetClient;
-use App\Clients\Contracts\BiblionetClientInterface;
 use App\Clients\Contracts\OpenLibraryClientInterface;
 use App\Clients\OpenLibraryClient;
+use App\Enums\ProviderType;
 use App\Models\ProviderCredential;
+use Ethelserth\Biblionet\BiblionetClient as LibraryBiblionetClient;
+use GuzzleHttp\Client as GuzzleClient;
+use GuzzleHttp\Psr7\HttpFactory;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
@@ -21,31 +25,39 @@ class AppServiceProvider extends ServiceProvider
      * here (use boot() for that), because they may not be ready yet.
      *
      * IMPORTANT: The closures below run LAZILY — only when something first
-     * requests the interface. By that point, the database is available and
+     * requests the bound class. By that point, the database is available and
      * we can safely call ProviderCredential::forProvider(). Do not run
      * DB queries at the top level of register() — only inside closures.
      */
     public function register(): void
     {
-        $this->app->bind(BiblionetClientInterface::class, function () {
-            // Guard: during `php artisan migrate`, the table may not exist yet.
-            // Schema::hasTable() is a cheap check that prevents a crash on
-            // fresh deployments. Falls back to .env config when table is absent.
+        // Override the library's singleton so credentials come from the DB
+        // (admin Settings → Data Providers) rather than .env.
+        // Our AppServiceProvider runs after the library's BiblionetServiceProvider,
+        // so this binding wins.
+        $this->app->singleton(LibraryBiblionetClient::class, function () {
             $cred = Schema::hasTable('provider_credentials')
-                ? ProviderCredential::forProvider('biblionet')
+                ? ProviderCredential::forProvider(ProviderType::Biblionet)
                 : null;
 
-            return new BiblionetClient(
-                baseUrl: $cred?->credential('base_url') ?? config('services.biblionet.base_url'),
-                clientId: $cred?->credential('client_id') ?? config('services.biblionet.client_id'),
-                clientSecret: $cred?->credential('client_secret') ?? config('services.biblionet.client_secret'),
-                rateLimit: (int) ($cred?->setting('rate_limit') ?? config('services.biblionet.rate_limit')),
+            $username = $cred?->credential('username') ?? config('biblionet.username', '');
+            $password = $cred?->credential('password') ?? config('biblionet.password', '');
+            $timeout = (int) ($cred?->setting('timeout') ?? config('biblionet.timeout', 30));
+
+            $factory = new HttpFactory;
+
+            return new LibraryBiblionetClient(
+                httpClient: new GuzzleClient(['timeout' => $timeout]),
+                requestFactory: $factory,
+                streamFactory: $factory,
+                username: $username ?? '',
+                password: $password ?? '',
             );
         });
 
         $this->app->bind(OpenLibraryClientInterface::class, function () {
             $cred = Schema::hasTable('provider_credentials')
-                ? ProviderCredential::forProvider('openlibrary')
+                ? ProviderCredential::forProvider(ProviderType::OpenLibrary)
                 : null;
 
             return new OpenLibraryClient(

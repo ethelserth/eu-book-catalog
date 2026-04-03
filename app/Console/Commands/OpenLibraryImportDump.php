@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 #[Signature('openlibrary:import-dump
-    {--type=editions : Record type to import: editions, works, authors}
+    {--type=all      : Record type to import: editions, works, authors, all (default: all)}
     {--file=         : Path to a local .txt.gz file (skips download)}
     {--limit=        : Stop after N records (useful for testing)}
     {--dry-run       : Parse and count but do not write to the database}
@@ -24,6 +24,7 @@ class OpenLibraryImportDump extends Command
     /**
      * OpenLibrary publishes monthly full dumps at these URLs.
      * "_latest" always resolves to the most recent file.
+     * 'all' refers to the combined dump containing every record type.
      *
      * @var array<string, string>
      */
@@ -31,7 +32,15 @@ class OpenLibraryImportDump extends Command
         'editions' => 'https://openlibrary.org/data/ol_dump_editions_latest.txt.gz',
         'works' => 'https://openlibrary.org/data/ol_dump_works_latest.txt.gz',
         'authors' => 'https://openlibrary.org/data/ol_dump_authors_latest.txt.gz',
+        'all' => 'https://openlibrary.org/data/ol_dump_latest.txt.gz',
     ];
+
+    /**
+     * Record types we want to import. All others (redirect, delete, etc.) are skipped.
+     *
+     * @var array<int, string>
+     */
+    private const IMPORTABLE_TYPES = ['edition', 'work', 'author'];
 
     public function handle(): int
     {
@@ -121,7 +130,25 @@ class OpenLibraryImportDump extends Command
                 continue;
             }
 
-            [, $key, , , $jsonRaw] = $parts;
+            [$typeRaw, $key, , , $jsonRaw] = $parts;
+
+            // Derive provider-vocabulary record_type: "/type/edition" → "edition"
+            $recordType = ltrim(str_replace('/type/', '', trim($typeRaw)), '/');
+
+            // Skip redirects, deletes, and any other non-importable types.
+            if (! in_array($recordType, self::IMPORTABLE_TYPES, strict: true)) {
+                $skipped++;
+
+                continue;
+            }
+
+            // When a per-type file is used (e.g. --type=editions), filter to only
+            // that type so a mis-labelled combined file doesn't produce wrong data.
+            if ($type !== 'all' && $recordType !== rtrim($type, 's')) {
+                $skipped++;
+
+                continue;
+            }
 
             $payload = json_decode(trim($jsonRaw), true);
 
@@ -142,6 +169,7 @@ class OpenLibraryImportDump extends Command
                     'id' => (string) Str::uuid(),
                     'source_system' => 'openlibrary',
                     'source_record_id' => $sourceId,
+                    'record_type' => $recordType,
                     'payload' => json_encode($payload),
                     'status' => 'pending',
                     'provenance_id' => $provenance?->id,
@@ -218,7 +246,7 @@ class OpenLibraryImportDump extends Command
         DB::table('raw_ingestion_records')->upsert(
             $batch,
             ['source_system', 'source_record_id'],
-            ['payload', 'status', 'provenance_id', 'fetched_at', 'processed_at', 'error_message', 'updated_at'],
+            ['record_type', 'payload', 'status', 'provenance_id', 'fetched_at', 'processed_at', 'error_message', 'updated_at'],
         );
     }
 }

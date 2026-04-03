@@ -4,25 +4,40 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Clients\Contracts\BiblionetClientInterface;
-use App\Clients\Exceptions\BiblionetRateLimitException;
 use App\Models\Provenance;
 use App\Models\RawIngestionRecord;
 use Carbon\Carbon;
+use Carbon\CarbonPeriod;
+use Ethelserth\Biblionet\BiblionetClient;
+use Ethelserth\Biblionet\DTOs\Title;
+use Ethelserth\Biblionet\DTOs\TitleSummary;
+use Ethelserth\Biblionet\Exceptions\BiblionetException;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 #[Signature('biblionet:fetch
-    {--full : Fetch all books (ignores --since)}
-    {--since= : Fetch books modified on or after this date (YYYY-MM-DD). Defaults to yesterday.}
-    {--limit= : Stop after fetching this many books (useful for testing)}
-    {--dry-run : Fetch from API but do not write to the database}')]
-#[Description('Fetch books from the BIBLIONET API and stage them as raw ingestion records.')]
+    {--full           : Full fetch — walks month-by-month, stages lightweight title summaries (enrich in Phase 5)}
+    {--since=         : Incremental start date YYYY-MM-DD (default: yesterday). Full mode: start month YYYY-MM (default: 2000-01)}
+    {--isbn=          : Fetch a single title by ISBN}
+    {--id=            : Fetch a single title by Biblionet ID}
+    {--limit=         : Stop after N titles staged}
+    {--max-requests=  : Stop after N API requests (default: 950 — Biblionet allows 1 000/day)}
+    {--dry-run        : Fetch from API but do not write to the database}')]
+#[Description('Fetch titles from the Biblionet API and stage them as raw ingestion records.')]
 class BiblionetFetch extends Command
 {
-    public function __construct(private readonly BiblionetClientInterface $client)
+    /**
+     * Biblionet enforces a hard limit of 1 000 API requests per day.
+     * We default to 950 to leave a safety buffer for other tooling.
+     */
+    private const DEFAULT_MAX_REQUESTS = 950;
+
+    /** Running count of API calls made in this invocation. */
+    private int $requestCount = 0;
+
+    public function __construct(private readonly BiblionetClient $client)
     {
         parent::__construct();
     }
@@ -30,172 +45,348 @@ class BiblionetFetch extends Command
     public function handle(): int
     {
         $limit = $this->option('limit') ? (int) $this->option('limit') : null;
+        $maxRequests = $this->option('max-requests') ? (int) $this->option('max-requests') : self::DEFAULT_MAX_REQUESTS;
         $dryRun = (bool) $this->option('dry-run');
 
         if ($dryRun) {
             $this->warn('DRY RUN — no data will be written to the database.');
         }
 
-        // ------------------------------------------------------------------
-        // Determine fetch mode
-        // ------------------------------------------------------------------
+        $this->info("Request budget: {$maxRequests}/day (Biblionet limit: 1 000/day)");
 
-        if ($this->option('full')) {
-            $this->info('Mode: full fetch (all books)');
-            $generator = $this->fullFetch();
-        } else {
-            $since = $this->option('since')
-                ? Carbon::parse($this->option('since'))
-                : Carbon::yesterday();
+        try {
+            if ($this->option('isbn')) {
+                return $this->fetchByIsbn((string) $this->option('isbn'), $dryRun, $maxRequests);
+            }
 
-            $this->info("Mode: incremental fetch since {$since->toDateString()}");
-            $generator = $this->incrementalFetch($since);
+            if ($this->option('id')) {
+                return $this->fetchById((int) $this->option('id'), $dryRun, $maxRequests);
+            }
+
+            if ($this->option('full')) {
+                return $this->runFullFetch($dryRun, $limit, $maxRequests);
+            }
+
+            return $this->runIncrementalFetch($dryRun, $limit, $maxRequests);
+
+        } catch (BiblionetException $e) {
+            // Any unhandled API exception bubbles here — most likely bad credentials.
+            $this->newLine();
+            $this->error("Biblionet API error: {$e->getMessage()}");
+            $this->error('Check your credentials in Settings → Data Providers.');
+            Log::error('BiblionetFetch: fatal API error', ['error' => $e->getMessage()]);
+
+            return self::FAILURE;
+        } finally {
+            $this->line("API requests used this run: {$this->requestCount}");
         }
+    }
 
-        // ------------------------------------------------------------------
-        // Create a Provenance record to track this batch.
-        //
-        // Provenance is our audit trail — every set of records fetched
-        // together shares one Provenance, so we can always answer:
-        // "where did this edition come from and when?"
-        // ------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // Single-title modes
+    // -------------------------------------------------------------------------
 
-        $batchId = 'biblionet-'.now()->format('Y-m-d-His');
-        $provenance = null;
+    private function fetchByIsbn(string $isbn, bool $dryRun, int $maxRequests): int
+    {
+        $this->info("Fetching title by ISBN: {$isbn}");
+        $this->guardRateLimit($maxRequests);
+
+        $this->requestCount++;
+        $title = $this->client->getTitleByIsbn($isbn);
+
+        $this->info("Found: {$title->title} (ID: {$title->titlesId})");
 
         if (! $dryRun) {
-            $provenance = Provenance::create([
-                'source_system' => 'biblionet',
-                'batch_id' => $batchId,
-                'ingestion_started_at' => now(),
-            ]);
-
-            $this->info("Provenance batch: {$batchId}");
+            $provenance = $this->openProvenance("isbn:{$isbn}");
+            $this->stageTitle($title, $provenance);
+            $this->closeProvenance($provenance, staged: 1, failed: 0);
         }
 
-        // ------------------------------------------------------------------
-        // Iterate the generator, staging each record.
-        // ------------------------------------------------------------------
+        return self::SUCCESS;
+    }
 
-        $fetched = $created = $updated = $failed = 0;
+    private function fetchById(int $id, bool $dryRun, int $maxRequests): int
+    {
+        $this->info("Fetching title by ID: {$id}");
+        $this->guardRateLimit($maxRequests);
 
-        foreach ($generator as $book) {
-            if ($limit && $fetched >= $limit) {
-                $this->info("Reached --limit={$limit}, stopping.");
-                break;
-            }
+        $this->requestCount++;
+        $title = $this->client->getTitle($id);
 
-            try {
-                if (! $dryRun) {
-                    $this->stageRecord($book, $provenance);
-                }
+        $this->info("Found: {$title->title}");
 
-                $fetched++;
-
-                if ($fetched % 50 === 0) {
-                    $this->info("  Fetched {$fetched} records...");
-                }
-
-            } catch (\Throwable $e) {
-                $failed++;
-                $recordId = $book['id'] ?? '?';
-                $this->error("Failed to stage record {$recordId}: {$e->getMessage()}");
-                Log::error('BiblionetFetch staging error', [
-                    'record' => $book['id'] ?? null,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+        if (! $dryRun) {
+            $provenance = $this->openProvenance("id:{$id}");
+            $this->stageTitle($title, $provenance);
+            $this->closeProvenance($provenance, staged: 1, failed: 0);
         }
-
-        // ------------------------------------------------------------------
-        // Update provenance stats on completion.
-        // ------------------------------------------------------------------
-
-        if (! $dryRun && $provenance) {
-            $provenance->update([
-                'ingestion_completed_at' => now(),
-                'records_processed' => $fetched,
-                'records_failed' => $failed,
-            ]);
-        }
-
-        $this->info("Done. Fetched: {$fetched} | Failed: {$failed}");
 
         return self::SUCCESS;
     }
 
     // -------------------------------------------------------------------------
-    // Fetch strategies — both return iterables of raw book arrays
+    // Incremental fetch — day-by-day via getTitlesByLastUpdate()
+    //
+    // Why day-by-day? The Biblionet API's lastupdate filter is scoped to a
+    // single date — there is no "from X to Y" range. Walking one day at a
+    // time lets us resume from any point if the job is interrupted.
+    // Each day = 1 API request, so 950 days ≈ 2.6 years fits within the budget.
+    // -------------------------------------------------------------------------
+
+    private function runIncrementalFetch(bool $dryRun, ?int $limit, int $maxRequests): int
+    {
+        $since = $this->option('since')
+            ? Carbon::parse($this->option('since'))
+            : Carbon::yesterday();
+
+        $until = Carbon::yesterday();
+
+        if ($since->isAfter($until)) {
+            $this->warn("--since ({$since->toDateString()}) is after yesterday — nothing to fetch.");
+
+            return self::SUCCESS;
+        }
+
+        $this->info("Incremental fetch: {$since->toDateString()} → {$until->toDateString()}");
+
+        $period = CarbonPeriod::create($since, '1 day', $until);
+        $days = (int) $since->diffInDays($until) + 1;
+
+        $bar = $this->output->createProgressBar($days);
+        $bar->setFormat(' %current%/%max% days [%bar%] %percent:3s%% — %message%');
+        $bar->setMessage('Starting...');
+        $bar->start();
+
+        $total = 0;
+
+        foreach ($period as $day) {
+            $dateStr = $day->toDateString();
+            $bar->setMessage($dateStr);
+
+            if (! $this->hasRemainingBudget($maxRequests)) {
+                $this->newLine();
+                $this->warn("Daily request budget reached ({$this->requestCount}/{$maxRequests}). Stopping — resume with --since={$dateStr}");
+                break;
+            }
+
+            // Any BiblionetException here (auth failure, server error) bubbles
+            // to handle() which logs it, shows a clear message, and returns FAILURE.
+            $this->requestCount++;
+            $titles = $this->client->getTitlesByLastUpdate($dateStr);
+
+            if (! empty($titles)) {
+                $staged = $failed = 0;
+                $provenance = $dryRun ? null : $this->openProvenance("incremental:{$dateStr}");
+
+                foreach ($titles as $title) {
+                    if ($limit !== null && $total >= $limit) {
+                        break 2;
+                    }
+
+                    try {
+                        if (! $dryRun) {
+                            $this->stageTitle($title, $provenance);
+                        }
+                        $staged++;
+                        $total++;
+                    } catch (\Throwable $e) {
+                        $failed++;
+                        Log::error('BiblionetFetch: staging error', [
+                            'id' => $title->titlesId,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+
+                if (! $dryRun && $provenance) {
+                    $this->closeProvenance($provenance, $staged, $failed);
+                }
+            }
+
+            $bar->advance();
+        }
+
+        $bar->finish();
+        $this->newLine();
+        $this->info("Done. Staged: {$total}");
+
+        return self::SUCCESS;
+    }
+
+    // -------------------------------------------------------------------------
+    // Full fetch — month-by-month via getMonthTitles()
+    //
+    // Stages lightweight TitleSummary records (enough for deduplication).
+    // Full Title data is fetched during Phase 5 normalisation (enrichment).
+    // Each page of 50 summaries = 1 API request.
+    // -------------------------------------------------------------------------
+
+    private function runFullFetch(bool $dryRun, ?int $limit, int $maxRequests): int
+    {
+        $sinceOption = $this->option('since') ?? '2000-01';
+        $parts = explode('-', $sinceOption);
+        $startYear = (int) $parts[0];
+        $startMonth = isset($parts[1]) ? (int) $parts[1] : 1;
+
+        $now = Carbon::now();
+        $this->info("Full fetch: {$sinceOption} → {$now->format('Y-m')} (title summaries — enrich in Phase 5)");
+
+        $total = 0;
+        $year = $startYear;
+        $month = $startMonth;
+
+        while ($year < $now->year || ($year === $now->year && $month <= $now->month)) {
+            $label = sprintf('%04d-%02d', $year, $month);
+            $this->line("  → {$label}");
+
+            $page = 1;
+            $provenance = null;
+            $monthStaged = 0;
+            $monthFailed = 0;
+
+            do {
+                if (! $this->hasRemainingBudget($maxRequests)) {
+                    $this->warn("Daily request budget reached ({$this->requestCount}/{$maxRequests}). Stopping — resume with --since={$label}");
+                    goto done;
+                }
+
+                // BiblionetException bubbles to handle().
+                $this->requestCount++;
+                $summaries = $this->client->getMonthTitles($year, $month, $page, perPage: 50);
+
+                if (empty($summaries)) {
+                    break;
+                }
+
+                if (! $dryRun && $provenance === null) {
+                    $provenance = $this->openProvenance("full:{$label}");
+                }
+
+                foreach ($summaries as $summary) {
+                    if ($limit !== null && $total >= $limit) {
+                        goto done;
+                    }
+
+                    try {
+                        if (! $dryRun) {
+                            $this->stageSummary($summary, $provenance);
+                        }
+                        $monthStaged++;
+                        $total++;
+                    } catch (\Throwable $e) {
+                        $monthFailed++;
+                        Log::error('BiblionetFetch: staging error', [
+                            'id' => $summary->titlesId,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+
+                $page++;
+            } while (count($summaries) >= 50);
+
+            if (! $dryRun && $provenance) {
+                $this->closeProvenance($provenance, $monthStaged, $monthFailed);
+            }
+
+            $month++;
+
+            if ($month > 12) {
+                $month = 1;
+                $year++;
+            }
+        }
+
+        done:
+        $this->info("Full fetch complete. Staged: {$total} title summaries.");
+
+        return self::SUCCESS;
+    }
+
+    // -------------------------------------------------------------------------
+    // Rate limit helpers
     // -------------------------------------------------------------------------
 
     /**
-     * Full fetch: page through /books from the beginning.
-     * Returns a Generator so we never hold all books in memory.
-     *
-     * @return \Generator<int, array<string, mixed>>
+     * Returns true if we can still make at least one more request.
      */
-    private function fullFetch(): \Generator
+    private function hasRemainingBudget(int $maxRequests): bool
     {
-        $page = 1;
-
-        do {
-            $this->line("  → fetching page {$page}...");
-
-            try {
-                $books = $this->client->fetchBooks($page, 100);
-            } catch (BiblionetRateLimitException $e) {
-                $this->warn("Rate limited. Sleeping {$e->retryAfter}s...");
-                sleep($e->retryAfter);
-                // Retry the same page.
-                $books = $this->client->fetchBooks($page, 100);
-            }
-
-            foreach ($books as $book) {
-                yield $book;
-            }
-
-            $page++;
-
-        } while (count($books) === 100); // assume full page means more pages exist
+        return $this->requestCount < $maxRequests;
     }
 
     /**
-     * Incremental fetch: books modified since $since.
-     * Delegates pagination to the client's Generator-based method.
-     *
-     * @return \Generator<int, array<string, mixed>>
+     * Hard stop for single-title modes where there is no loop to check first.
      */
-    private function incrementalFetch(Carbon $since): \Generator
+    private function guardRateLimit(int $maxRequests): void
     {
-        yield from $this->client->fetchBooksSince($since);
+        if (! $this->hasRemainingBudget($maxRequests)) {
+            throw new \RuntimeException("Daily request budget of {$maxRequests} already exhausted.");
+        }
     }
 
     // -------------------------------------------------------------------------
-    // Staging
+    // Provenance helpers
     // -------------------------------------------------------------------------
 
-    /**
-     * Upsert a raw book record into the staging table.
-     *
-     * updateOrCreate() is Laravel's "insert or update" — it looks up the
-     * record by the first array (the unique key), and if found updates it
-     * with the second array; if not found, merges both arrays and inserts.
-     *
-     * @param  array<string, mixed>  $book
-     */
-    private function stageRecord(array $book, Provenance $provenance): void
+    private function openProvenance(string $label): Provenance
+    {
+        return Provenance::create([
+            'source_system' => 'biblionet',
+            'batch_id' => 'biblionet-'.now()->format('Y-m-d-His').'-'.str($label)->slug(),
+            'ingestion_started_at' => now(),
+        ]);
+    }
+
+    private function closeProvenance(Provenance $provenance, int $staged, int $failed): void
+    {
+        $provenance->update([
+            'ingestion_completed_at' => now(),
+            'records_processed' => $staged,
+            'records_failed' => $failed,
+        ]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Staging helpers
+    //
+    // DTOs are readonly classes — json_encode() serialises all public properties,
+    // then json_decode() with associative=true gives us a plain array for the
+    // payload column (jsonb in PostgreSQL).
+    // -------------------------------------------------------------------------
+
+    private function stageTitle(Title $title, Provenance $provenance): void
     {
         RawIngestionRecord::updateOrCreate(
             [
                 'source_system' => 'biblionet',
-                'source_record_id' => (string) $book['id'],
+                'source_record_id' => (string) $title->titlesId,
             ],
             [
-                'payload' => $book,
+                'record_type' => 'title',
+                'payload' => json_decode(json_encode($title), associative: true),
                 'status' => 'pending',
                 'provenance_id' => $provenance->id,
                 'fetched_at' => now(),
-                // Reset processing state so the pipeline will re-process it.
+                'processed_at' => null,
+                'error_message' => null,
+            ]
+        );
+    }
+
+    private function stageSummary(TitleSummary $summary, Provenance $provenance): void
+    {
+        RawIngestionRecord::updateOrCreate(
+            [
+                'source_system' => 'biblionet',
+                'source_record_id' => (string) $summary->titlesId,
+            ],
+            [
+                'record_type' => 'title_summary',
+                'payload' => json_decode(json_encode($summary), associative: true),
+                'status' => 'pending',
+                'provenance_id' => $provenance->id,
+                'fetched_at' => now(),
                 'processed_at' => null,
                 'error_message' => null,
             ]
