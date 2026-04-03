@@ -1148,16 +1148,16 @@
         },
         {
             "name": "ethelserth/biblionet-php",
-            "version": "1.0.1",
+            "version": "1.0.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/ethelserth/biblionet-php.git",
-                "reference": "80afbee339b3c83e622edc01c53c5baa52c85b3e"
+                "reference": "e39570d2028c330f1f6d6ebda389e6627ba584f2"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/ethelserth/biblionet-php/zipball/80afbee339b3c83e622edc01c53c5baa52c85b3e",
-                "reference": "80afbee339b3c83e622edc01c53c5baa52c85b3e",
+                "url": "https://api.github.com/repos/ethelserth/biblionet-php/zipball/e39570d2028c330f1f6d6ebda389e6627ba584f2",
+                "reference": "e39570d2028c330f1f6d6ebda389e6627ba584f2",
                 "shasum": ""
             },
             "require": {
@@ -1197,9 +1197,9 @@
             ],
             "support": {
                 "issues": "https://github.com/ethelserth/biblionet-php/issues",
-                "source": "https://github.com/ethelserth/biblionet-php/tree/v1.0.1"
+                "source": "https://github.com/ethelserth/biblionet-php/tree/v1.0.3"
             },
-            "time": "2026-04-03T20:01:25+00:00"
+            "time": "2026-04-03T20:23:16+00:00"
         },
         {
             "name": "filament/actions",

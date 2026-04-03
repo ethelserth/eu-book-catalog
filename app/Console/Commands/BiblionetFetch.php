@@ -10,7 +10,6 @@ use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Ethelserth\Biblionet\BiblionetClient;
 use Ethelserth\Biblionet\DTOs\Title;
-use Ethelserth\Biblionet\DTOs\TitleSummary;
 use Ethelserth\Biblionet\Exceptions\BiblionetException;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -18,7 +17,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 #[Signature('biblionet:fetch
-    {--full           : Full fetch — walks month-by-month, stages lightweight title summaries (enrich in Phase 5)}
+    {--full           : Full fetch — walks month-by-month, stages full title records}
     {--since=         : Incremental start date YYYY-MM-DD (default: yesterday). Full mode: start month YYYY-MM (default: 2000-01)}
     {--isbn=          : Fetch a single title by ISBN}
     {--id=            : Fetch a single title by Biblionet ID}
@@ -216,9 +215,8 @@ class BiblionetFetch extends Command
     // -------------------------------------------------------------------------
     // Full fetch — month-by-month via getMonthTitles()
     //
-    // Stages lightweight TitleSummary records (enough for deduplication).
-    // Full Title data is fetched during Phase 5 normalisation (enrichment).
-    // Each page of 50 summaries = 1 API request.
+    // The API returns full Title records (same structure as get_title).
+    // Each page of 50 titles = 1 API request.
     // -------------------------------------------------------------------------
 
     private function runFullFetch(bool $dryRun, ?int $limit, int $maxRequests): int
@@ -250,9 +248,21 @@ class BiblionetFetch extends Command
                     goto done;
                 }
 
-                // BiblionetException bubbles to handle().
+                // 500 means end-of-data for this month (API bug — returns 500
+                // instead of empty array when the page is out of range).
+                // Any other exception bubbles to handle() and stops the command.
                 $this->requestCount++;
-                $summaries = $this->client->getMonthTitles($year, $month, $page, perPage: 50);
+
+                try {
+                    $summaries = $this->client->getMonthTitles($year, $month, $page, perPage: 50);
+                } catch (BiblionetException $e) {
+                    if ($e->getCode() === 500) {
+                        Log::info("BiblionetFetch: 500 on {$label} page {$page} — treating as end of month data.");
+                        break;
+                    }
+
+                    throw $e;
+                }
 
                 if (empty($summaries)) {
                     break;
@@ -262,21 +272,21 @@ class BiblionetFetch extends Command
                     $provenance = $this->openProvenance("full:{$label}");
                 }
 
-                foreach ($summaries as $summary) {
+                foreach ($summaries as $title) {
                     if ($limit !== null && $total >= $limit) {
                         goto done;
                     }
 
                     try {
                         if (! $dryRun) {
-                            $this->stageSummary($summary, $provenance);
+                            $this->stageTitle($title, $provenance);
                         }
                         $monthStaged++;
                         $total++;
                     } catch (\Throwable $e) {
                         $monthFailed++;
                         Log::error('BiblionetFetch: staging error', [
-                            'id' => $summary->titlesId,
+                            'id' => $title->titlesId,
                             'error' => $e->getMessage(),
                         ]);
                     }
@@ -298,7 +308,7 @@ class BiblionetFetch extends Command
         }
 
         done:
-        $this->info("Full fetch complete. Staged: {$total} title summaries.");
+        $this->info("Full fetch complete. Staged: {$total} titles.");
 
         return self::SUCCESS;
     }
@@ -365,25 +375,6 @@ class BiblionetFetch extends Command
             [
                 'record_type' => 'title',
                 'payload' => json_decode(json_encode($title), associative: true),
-                'status' => 'pending',
-                'provenance_id' => $provenance->id,
-                'fetched_at' => now(),
-                'processed_at' => null,
-                'error_message' => null,
-            ]
-        );
-    }
-
-    private function stageSummary(TitleSummary $summary, Provenance $provenance): void
-    {
-        RawIngestionRecord::updateOrCreate(
-            [
-                'source_system' => 'biblionet',
-                'source_record_id' => (string) $summary->titlesId,
-            ],
-            [
-                'record_type' => 'title_summary',
-                'payload' => json_decode(json_encode($summary), associative: true),
                 'status' => 'pending',
                 'provenance_id' => $provenance->id,
                 'fetched_at' => now(),
