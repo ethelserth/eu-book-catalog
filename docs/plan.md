@@ -2,18 +2,43 @@
 
 ## Phase Overview
 
-| Phase | Name | Steps | Description |
-|-------|------|-------|-------------|
-| 1 | Foundation | 1-28 | ✓ Laravel, PostgreSQL, schema, models |
-| 2 | Filament Admin | 29-55 | Admin panel, CRUD for all entities |
-| 3 | Thema Seeding | 56-65 | Import subject classification |
-| 4 | BIBLIONET Client | 66-80 | API client, fetching, staging |
-| 5 | Authority Matching | 81-110 | VIAF, Wikidata, confidence scoring |
-| 6 | Pipeline Services | 111-135 | Resolvers, ingestion pipeline |
-| 7 | Search & Indexing | 136-155 | Elasticsearch integration |
-| 8 | Public API | 156-175 | REST endpoints, JSON-LD |
-| 9 | Testing & Deployment | 176-190 | Tests, Docker, production |
-| 10 | Federation | 191-200 | OAI-PMH, partner integration |
+> **Note:** the phase numbering below has been reshuffled since this plan was first written —
+> normalisation now precedes authority matching (you can't enrich authors via VIAF until you
+> can extract their names from raw payloads). The authoritative running status lives in
+> [docs/progress.md](./progress.md). The detailed steps in *this* file still describe
+> the original ordering and are kept as a reference for the unimplemented later phases.
+
+| Phase | Name | Status |
+|-------|------|--------|
+| 1 | Foundation | ✓ Complete |
+| 2 | Filament Admin | ✓ Complete |
+| 3 | Thema Seeding | ✓ Complete |
+| 4 | Multi-Provider Ingestion | ✓ Complete |
+| 5 | **Normalisation Pipeline** (mappers + writer) | ✓ Complete (initial) |
+| 6 | Authority Matching (VIAF / Wikidata / ISNI) | Not Started |
+| 7 | Pipeline Refinement (review queue, merge, dedup) | Not Started |
+| 8 | Search & Indexing (Elasticsearch) | Not Started |
+| 9 | Public API (REST + JSON-LD) | Not Started |
+| 10 | Testing & Deployment | Not Started |
+| 11 | Federation (OAI-PMH) | Not Started |
+
+---
+
+## Phase 5: Normalisation Pipeline — Implementation Summary
+
+What got built (full details in [docs/progress.md](./progress.md)):
+
+- DTO tree under `app/DTOs/Normalised/` (Author, Publisher, Work, Expression, Edition, Record)
+- `MapperInterface` + `MapperRegistry` in `app/Mappers/`
+- `OpenLibraryMapper` and `BiblionetMapper`
+- `Support/PublicationDateParser` and `Support/IsoLanguage` helpers
+- `Services/CatalogWriter` — owns all writes to `works`/`expressions`/`editions`/`authors`/`publishers`
+- `Jobs/ProcessRawIngestionJob`
+- `php artisan catalog:normalise` command
+
+Author/work/edition deduplication strategy is naive in Phase 5 (exact-name match for authors,
+ISBN-or-composite for editions). Phase 6 replaces author matching with VIAF/Wikidata lookups
+and adds confidence scoring; everything else stays.
 
 ---
 
@@ -449,7 +474,10 @@ $schedule->command('biblionet:fetch --since=yesterday')
 
 ---
 
-## Phase 5: Authority Matching
+## Phase 6: Authority Matching
+
+> Originally labelled Phase 5 in this document. Re-numbered to follow the now-complete
+> normalisation pipeline. Step numbers preserved as historical reference.
 
 ### Support Utilities (Steps 81-85)
 

@@ -256,6 +256,9 @@ NORMALISATION (Phase 5, not yet built)
 - `ProviderCredential` admin panel — Settings → Data Providers, with Sync button
 - Async sync via `SyncProviderJob` + database queue + Filament bell notifications
 - Nightly scheduler in `routes/console.php` at 03:00
+- **`OpenLibraryMapper`** (Phase 5) — converts staged OL payloads (record_type = `author` / `work` / `edition`) into the shared `NormalisedRecord` DTO. Resolves cross-record OLID references by looking up companion `raw_ingestion_records` rows.
+- **`CatalogWriter`** (Phase 5) — upserts the FRBR chain from any provider's normalised record.
+- **`php artisan catalog:normalise --provider=openlibrary`** runs the OL pipeline (`--record-type=author` first, then `work`, then `edition`).
 
 ### Gaps / Known Issues ✗
 
@@ -308,27 +311,36 @@ php artisan openlibrary:import-dump --limit=1000 --dry-run
 
 ---
 
-## Planned: OpenLibraryMapper (Phase 5)
+## OpenLibraryMapper — Implemented (Phase 5)
 
-The mapper translates a raw payload from `raw_ingestion_records` into FRBR DTOs.
-Different logic per `record_type`:
+Lives at [app/Mappers/OpenLibraryMapper.php](../../app/Mappers/OpenLibraryMapper.php). Routes on `record_type`:
 
 ```
-record_type = 'edition' → NormalisedEditionRecord
-  - Requires work OLID resolution (may trigger a work lookup)
-  - May require author OLID resolution (may trigger author lookup)
+record_type = 'author'  → NormalisedRecord(author: …)
+  - name + alternate_names + sort_name (from personal_name)
+  - birth_year / death_year extracted from free-text birth_date / death_date
+  - remote_ids.{viaf, isni, wikidata} → authors.{viaf_id, isni, wikidata_id}
 
-record_type = 'work' → NormalisedWorkRecord
-  - Title, description, subjects
-  - Author OLIDs (resolve from raw_ingestion_records cache or API)
+record_type = 'work'    → NormalisedRecord(work: …)
+  - title + description (handles string or {type, value} shapes)
+  - first_publish_date → first_publication_year
+  - subjects[] kept raw on the DTO as lcshSubjects (not yet persisted — see gap below)
+  - authors[].author.key OLIDs resolved against companion raw_ingestion_records
 
-record_type = 'author' → NormalisedAuthorRecord
-  - Name, birth/death dates
-  - VIAF, Wikidata, ISNI from remote_ids (free authority data)
+record_type = 'edition' → NormalisedRecord(work, expression, edition)
+  - isbn_13/10 arrays → first valid; languages[0].key → ISO 639-2
+  - publishers[0] → NormalisedPublisher
+  - publish_date free-text → {publication_date, publication_year} via PublicationDateParser
+  - physical_format string → editions.format enum (hardcover/paperback/ebook/audiobook)
+  - covers[] → covers.openlibrary.org/b/id/{id}-L.jpg (filters -1 placeholders)
+  - works[0].key OLID → companion work record lookup; falls back to building a minimal
+    Work from the edition's own title if work isn't yet staged
 ```
 
-The mapper processes `author` records first, then `work` records, then `edition` records,
-so that work/edition normalisation can reference already-resolved authors.
+The runner (`catalog:normalise`) walks record types in the order **author → work → edition** so
+companion lookups always have data to find. If a record's OLID dependencies aren't staged,
+the mapper still produces a usable (stub) result — the gap surfaces in the data quality
+review queue rather than throwing.
 
 ---
 

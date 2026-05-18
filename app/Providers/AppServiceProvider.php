@@ -7,6 +7,9 @@ namespace App\Providers;
 use App\Clients\Contracts\OpenLibraryClientInterface;
 use App\Clients\OpenLibraryClient;
 use App\Enums\ProviderType;
+use App\Mappers\BiblionetMapper;
+use App\Mappers\MapperRegistry;
+use App\Mappers\OpenLibraryMapper;
 use App\Models\ProviderCredential;
 use Ethelserth\Biblionet\BiblionetClient as LibraryBiblionetClient;
 use GuzzleHttp\Client as GuzzleClient;
@@ -65,6 +68,16 @@ class AppServiceProvider extends ServiceProvider
                 userAgent: $cred?->credential('user_agent') ?? config('services.openlibrary.user_agent', 'EUCatalog/1.0'),
                 rateLimit: (int) ($cred?->setting('rate_limit') ?? config('services.openlibrary.rate_limit', 3)),
             );
+        });
+
+        // Phase 5 normalisation pipeline: one registry, one mapper per provider.
+        // Adding a new provider means appending one ->register() call here.
+        $this->app->singleton(MapperRegistry::class, function () {
+            $registry = new MapperRegistry;
+            $registry->register(new OpenLibraryMapper);
+            $registry->register(new BiblionetMapper);
+
+            return $registry;
         });
     }
 

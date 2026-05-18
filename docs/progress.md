@@ -8,7 +8,7 @@
 | 2 | Filament Admin | ✓ Complete |
 | 3 | Thema Seeding | ✓ Complete |
 | 4 | Multi-Provider Ingestion | ✓ Complete |
-| 5 | Normalisation Pipeline | In Progress |
+| 5 | Normalisation Pipeline | ✓ Complete (initial) |
 | 6 | Authority Matching | Not Started |
 | 7 | Pipeline Services (FRBR Write) | Not Started |
 | 8 | Search & Indexing | Not Started |
@@ -164,70 +164,100 @@
 
 ---
 
-## Phase 5: Normalisation Pipeline (Steps 81-100)
+## Phase 5: Normalisation Pipeline ✓ COMPLETE (initial)
 
 ### Architecture
 Each provider has a **Mapper** that translates raw JSON payload fields into a
-provider-agnostic **NormalisedBookRecord** DTO. A shared **CatalogWriter** service
+provider-agnostic **NormalisedRecord** DTO. A shared **CatalogWriter** service
 then upserts into the FRBR tables. This is what moves records from
 `raw_ingestion_records` (status=pending) into `works / expressions / editions / authors`.
 
 ```
 raw_ingestion_records (pending)
     → MapperRegistry::for($sourceSystem)
-    → ProviderMapper::map($payload)  ← one per provider (OpenLibrary, BIBLIONET…)
-    → NormalisedBookRecord (DTO)      ← provider-agnostic FRBR shape
-    → CatalogWriter::write($dto)      ← upserts Work, Expression, Edition, Author
-    → raw_ingestion_records status = 'processed'
+    → ProviderMapper::map($record)   ← one per provider (OpenLibraryMapper, BiblionetMapper)
+    → NormalisedRecord (DTO tree)    ← provider-agnostic FRBR shape
+    → CatalogWriter::write($dto)     ← upserts Author, Publisher, Work, Expression, Edition
+    → edition_provenance_log entry written
+    → raw_ingestion_records.status = 'completed' + edition_id set
 ```
 
-Why a mapper per provider? Because field names differ:
+Field name diversity is the reason mappers are per-provider:
 - OpenLibrary: `title`, `isbn_13[]`, `publishers[]`, `publish_date`, `languages[].key`
-- BIBLIONET: completely different structure (TBD when credentials arrive)
-The DTO is the common language between them.
+- BIBLIONET: `Title`, `ISBN`, `Publisher`, `CurrentPublishDate`, `Language`
+The DTO is the common language between them; `CatalogWriter` only speaks DTO.
 
-### Prerequisites (do first)
-- [ ] 81. Migration: add `record_type` VARCHAR to raw_ingestion_records (edition, work, author, book…)
-- [ ] 82. Rewrite openlibrary:import-dump to read local files from storage/providers/openlibrary/
-         - Auto-detect latest dump file in directory
-         - Support combined dump (all types) and per-type files
-         - Infer record_type from /type/ column in TSV
-         - Skip /type/redirect and /type/delete records
-         - Use gzopen() for local .gz files (not compress.zlib:// URL approach)
-         - php artisan openlibrary:import-dump [--file=path] [--type=editions|works|authors|all] [--limit=N] [--dry-run]
+### DTOs ✓
+- [x] `app/DTOs/Normalised/NormalisedAuthor.php` — name, sort_name, birth/death years, viaf/isni/wikidata, role, position
+- [x] `app/DTOs/Normalised/NormalisedPublisher.php`
+- [x] `app/DTOs/Normalised/NormalisedWork.php` — original_title, original_language, authors[], LCSH subjects
+- [x] `app/DTOs/Normalised/NormalisedExpression.php` — language, title, expression_type, contributors[]
+- [x] `app/DTOs/Normalised/NormalisedEdition.php` — isbn13/10, publication_date/year, format, pages, publisher
+- [x] `app/DTOs/Normalised/NormalisedRecord.php` — umbrella DTO. Different mapper outputs populate different fields (author-only / work-only / full chain) — writer inspects which are set
 
-### DTOs & Contracts
-- [ ] 83. MapperInterface contract (map(array $payload, string $recordType): NormalisedRecord[])
-- [ ] 84. NormalisedWorkRecord DTO
-- [ ] 85. NormalisedExpressionRecord DTO (inferred from edition language)
-- [ ] 86. NormalisedEditionRecord DTO (isbn, pages, publish_year, publisher)
-- [ ] 87. NormalisedAuthorRecord DTO (name, viaf_id, wikidata_id, isni)
-- [ ] 88. MapperRegistry (resolves mapper by source_system string)
+### Contracts & Registry ✓
+- [x] `app/Mappers/MapperInterface.php` — `sourceSystem(): string`, `map(RawIngestionRecord): ?NormalisedRecord`
+- [x] `app/Mappers/MapperRegistry.php` — `register()`, `for($source)`, `has()`, `registeredSourceSystems()`
+- [x] `AppServiceProvider` registers OpenLibraryMapper + BiblionetMapper as a singleton registry
 
-### OpenLibrary Mapper
-- [ ] 89. OpenLibraryMapper implements MapperInterface
-- [ ] 90. map() routes to mapEdition / mapWork / mapAuthor based on record_type
-- [ ] 91. mapEdition: isbn_10/13, pages, publish_date, publishers, language, work OLID
-- [ ] 92. mapWork: title, description, subjects (LCSH stored raw)
-- [ ] 93. mapAuthor: name, alternate_names, birth/death dates, remote_ids (VIAF, Wikidata, ISNI)
-- [ ] 94. Process order: authors first → works → editions (so FK references resolve)
+### Provider Mappers ✓
+- [x] `app/Mappers/OpenLibraryMapper.php` — routes on `record_type` (author/work/edition)
+  - Author: name, alternate_names, birth/death dates → year, `remote_ids.{viaf,isni,wikidata}` extracted
+  - Work: title, description (string or `{type,value}`), subjects (LCSH preserved raw), first_publish_date
+  - Edition: isbn_13/10 arrays → first valid; `publishers[0]`; `physical_format` → format enum; cover via `covers[]`
+  - **OLID cross-reference resolution**: when an edition payload references `/authors/OL…A`, the mapper looks up the matching `raw_ingestion_records` row by `(source_system=openlibrary, source_record_id=authors/OL…A)` to enrich with the author's full record. Same for works. If the companion record isn't staged yet, falls back to a stub (uses OLID as display name) so the chain isn't broken.
+- [x] `app/Mappers/BiblionetMapper.php` — single record → full chain (BIBLIONET title carries work+expression+edition together)
+  - Picks the 13-digit form from `isbn`/`isbn2`/`isbn3`, separately surfaces 10-digit
+  - `languageOriginal` + `languageTranslatedFrom` heuristic flags translations (expression_type='translation')
+  - Publisher gets `country='GR'` by default (BIBLIONET is a Greek-publisher catalog)
 
-### BIBLIONET Mapper (blocked on credentials)
-- [ ] 95. BiblionetMapper implements MapperInterface (implement when API docs available)
+### Support utilities ✓
+- [x] `app/Support/PublicationDateParser.php` — parses "2010-03-15" / "March 1997" / "c1990" → `{date: ?ISO, year: ?int}`, sanity-bounds 1500..next_year
+- [x] `app/Support/IsoLanguage.php` — normalises `/languages/eng`, two-letter ISO 639-1, and free-text names (English/Greek labels) → ISO 639-2 three-letter codes
 
-### Catalog Writer
-- [ ] 96. CatalogWriter service (provider-agnostic — knows only FRBR DTOs)
-- [ ] 97. findOrCreateWork (match by title + author fingerprint, or create new)
-- [ ] 98. findOrCreateExpression (match by work + language code)
-- [ ] 99. createOrUpdateEdition (ISBN as unique key; composite key fallback)
-- [ ] 100. attachAuthors (name variants; authority IDs from DTO)
-- [ ] 101. attachPublisher (findOrCreate by name)
-- [ ] 102. Write edition_provenance_log entry
+### CatalogWriter ✓
+`app/Services/CatalogWriter.php` — sole owner of FRBR-table writes. Single public method:
+```php
+write(NormalisedRecord, Provenance, RawIngestionRecord): Edition|Work|Author|null
+```
+All writes wrapped in one DB transaction; partial failure rolls back.
 
-### Job & Command
-- [ ] 103. ProcessRawIngestion job (reads pending records, routes by source_system+record_type)
-- [ ] 104. php artisan catalog:normalise (--provider, --record-type, --limit, --dry-run)
-- [ ] 105. Verify: raw record → works/editions/authors tables visible in admin
+Deduplication strategy (Phase 5 — naive, Phase 6 will use VIAF/Wikidata for authority):
+- **Authors**: viaf_id → wikidata_id → isni → name_variant.name → display_name → create new (`authority_confidence` 0.90 if any authority id, 0.30 otherwise; `needs_review=true` without any)
+- **Publishers**: case-insensitive name → name_variant.name → create new. Falls back to "Unknown Publisher" sentinel when payload omits a publisher (editions.publisher_id is NOT NULL)
+- **Works**: wikidata_id → (lead_author_id + lowercased original_title + original_language) → create new
+- **Expressions**: composite (work_id, language, expression_type) — `firstOrCreate`
+- **Editions**: isbn13 unique → composite (publisher_id, expression_id, publication_year, format) → create new
+
+Side effects on every write:
+- `author_name_variants` updated with display name + alternate_names (script auto-detected: greek/cyrillic/latin/other)
+- `publisher_name_variants` updated
+- `edition_provenance_log` entry created with action='created' or 'updated'
+- `raw_ingestion_records.status='completed'`, `edition_id` linked back
+
+### Job & Command ✓
+- [x] `app/Jobs/ProcessRawIngestionJob.php` — single-record async normaliser; `tries=1` (no auto-retry — failures should surface, not be masked)
+- [x] `php artisan catalog:normalise` — orchestrator
+  - `--provider=openlibrary|biblionet` — restrict to one source
+  - `--record-type=edition|work|author|title` — restrict to one type
+  - `--status=pending|failed` — default 'pending'
+  - `--retry-failed` — shortcut for status=failed
+  - `--limit=N` — stop after N records
+  - `--queue` — dispatch as background jobs (uses ProcessRawIngestionJob)
+  - `--dry-run` — run mappers but skip the writer (status reset to pending after)
+  - Processes types in the order author → work → edition → title so OL OLID cross-references resolve correctly
+
+### Verified
+- BIBLIONET title `62758` (`Μαθηματικά Β΄ λυκείου`) normalised end-to-end:
+  - Work + Expression + Edition + Author + Publisher rows created
+  - `edition_provenance_log` written
+  - Re-running the same row updates in place — idempotent, no duplicate rows
+
+### Outstanding
+- [ ] OpenLibrary edition normalisation has not yet been smoke-tested with real staged OL data; the OLID-companion-lookup branch needs author/work records staged first
+- [ ] Author dedup is currently exact-string (modulo authority IDs); Phase 6 will add VIAF/Wikidata-driven matching with confidence scoring
+- [ ] LCSH subjects collected on works but not yet persisted (no LCSH column / no Thema crosswalk)
+- [ ] `--queue` mode has not been exercised under load — fire-and-forget dispatch should work but a real run will validate
 
 ---
 
